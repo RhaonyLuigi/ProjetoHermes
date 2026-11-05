@@ -14,33 +14,76 @@ const DB = {
 
   // ---- SESSION ----
   getSession() {
-    try { return JSON.parse(localStorage.getItem('hermes_session')); }
+    try {
+      const current = sessionStorage.getItem('hermes_session');
+      if (current !== null) return JSON.parse(current);
+      const legacy = localStorage.getItem('hermes_session');
+      if (legacy) {
+        this.setSession(JSON.parse(legacy));
+        return JSON.parse(sessionStorage.getItem('hermes_session'));
+      }
+      return null;
+    }
     catch { return null; }
   },
-  setSession(user) { localStorage.setItem('hermes_session', JSON.stringify(user)); },
-  clearSession() { localStorage.removeItem('hermes_session'); },
+  setSession(user) {
+    const { id, email, user_type } = user;
+    sessionStorage.setItem('hermes_session', JSON.stringify({ id, email, user_type }));
+    localStorage.removeItem('hermes_session');
+  },
+  clearSession() {
+    sessionStorage.removeItem('hermes_session');
+    localStorage.removeItem('hermes_session');
+  },
+
+  demoPerfis: {
+    motorista: { email: 'demo_mot@hermes.com', tipo: 'motorista', nome: 'Motorista' },
+    oficina: { email: 'demo_ofi@hermes.com', tipo: 'oficina', nome: 'Oficina Avenida' },
+    central: { email: 'demo_central@hermes.com', tipo: 'oficina', nome: 'Oficina Central' }
+  },
+  isDemo(user) {
+    return Object.values(this.demoPerfis).some(perfil => user?.email === perfil.email && user.user_type === perfil.tipo);
+  },
 
   // ---- USERS ----
-  createUser(email, password, userType) {
+  async passwordHash(password, salt) {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: Uint8Array.from(atob(salt), char => char.charCodeAt(0)), iterations: 600000, hash: 'SHA-256' }, key, 256);
+    return btoa(String.fromCharCode(...new Uint8Array(bits)));
+  },
+
+  async createUser(email, password, userType) {
+    email = email.trim().toLowerCase();
+    if (Object.values(this.demoPerfis).some(perfil => perfil.email === email)) return { error: 'Este endereço é reservado para a demonstração.' };
+    const salt = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+    const hash = await this.passwordHash(password, salt);
     const users = this._get('users');
-    if (users.find(u => u.email === email)) return { error: 'Email já cadastrado.' };
-    const user = { id: this._id(), email, password, user_type: userType, created_at: this._now() };
+    if (users.some(u => u.email.toLowerCase() === email)) return { error: 'E-mail já cadastrado.' };
+    const user = { id: this._id(), email, salt, hash, user_type: userType, created_at: this._now() };
     users.push(user);
     this._set('users', users);
     return { user };
   },
-  findUser(email, password) {
-    const users = this._get('users');
-    return users.find(u => u.email === email && u.password === password) || null;
-  },
-  getUserById(id) {
-    return this._get('users').find(u => u.id === id) || null;
+  async findUser(email, password) {
+    const user = this._get('users').find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+    if (!user || this.isDemo(user)) return null;
+    if (user.hash) return await this.passwordHash(password, user.salt) === user.hash ? user : null;
+    if (user.password !== password) return null;
+    const salt = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+    const hash = await this.passwordHash(password, salt);
+    const users = this._get('users').map(u => {
+      if (u.id !== user.id) return u;
+      const { password: _legacy, ...profile } = u;
+      return { ...profile, salt, hash };
+    });
+    this._set('users', users);
+    return user;
   },
 
   // ---- MOTORISTA PROFILES ----
   saveMotoristaProfile(userId, data) {
     const profiles = this._get('motorista_profiles').filter(p => p.user_id !== userId);
-    const profile = { id: this._id(), user_id: userId, ...data, created_at: this._now() };
+    const profile = { id: this._id(), user_id: userId, created_at: this._now(), ...data };
     profiles.push(profile);
     this._set('motorista_profiles', profiles);
     return profile;
@@ -53,7 +96,7 @@ const DB = {
   // ---- OFICINA PROFILES ----
   saveOficinaProfile(userId, data) {
     const profiles = this._get('oficina_profiles').filter(p => p.user_id !== userId);
-    const profile = { id: this._id(), user_id: userId, ...data, created_at: this._now() };
+    const profile = { id: this._id(), user_id: userId, created_at: this._now(), ...data };
     profiles.push(profile);
     this._set('oficina_profiles', profiles);
     return profile;
@@ -87,86 +130,138 @@ const DB = {
     return this._get('veiculos').find(v => v.id === id) || null;
   },
 
-  // ---- CHAMADOS ----
-  createChamado(motoristaId, veiculoId) {
+  getDraft(userId) {
+    try { return JSON.parse(localStorage.getItem('hermes_triagem_' + userId)); }
+    catch { return null; }
+  },
+  saveDraft(userId, draft) {
+    localStorage.setItem('hermes_triagem_' + userId, JSON.stringify(draft));
+  },
+  clearDraft(userId) { localStorage.removeItem('hermes_triagem_' + userId); },
+
+  publicarChamado(userId, draft, resumo, perguntas) {
+    const veiculo = this.getVeiculoById(draft.veiculoId);
+    if (veiculo?.motorista_id !== userId) return null;
     const chamados = this._get('chamados');
-    const c = { id: this._id(), motorista_id: motoristaId, veiculo_id: veiculoId, diagnostico_ia: '', status: 'em_diagnostico', created_at: this._now() };
-    chamados.push(c);
+    const existing = chamados.find(c => c.id === draft.id && c.motorista_id === userId);
+    if (existing) return existing;
+    const now = this._now();
+    const chamado = {
+      id: draft.id, motorista_id: userId, veiculo_id: draft.veiculoId,
+      categoria: draft.categoria, resumo_triagem: resumo, resumo_ia: draft.resumoIA || '',
+      diagnostico_ia: [resumo.relato, resumo.inspecao, draft.resumoIA].filter(Boolean).join('\n\n'),
+      perguntas, status: 'aguardando', created_at: now, enviado_em: now
+    };
+    chamados.push(chamado);
     this._set('chamados', chamados);
-    return c;
+    return chamado;
   },
-  updateChamadoDiag(id, diag) {
-    const chamados = this._get('chamados');
-    const idx = chamados.findIndex(c => c.id === id);
-    if (idx >= 0) { chamados[idx].diagnostico_ia = diag; this._set('chamados', chamados); }
+
+  // ---- CHAMADOS ----
+  comStatusAtual(chamado, atendimento) {
+    if (!chamado || !atendimento) return chamado;
+    return { ...chamado, status: atendimento.status === 'concluido' ? 'concluido' : 'em_atendimento' };
   },
-  getChamadoById(id) { return this._get('chamados').find(c => c.id === id) || null; },
-  getChamadosAbertos() { return this._get('chamados').filter(c => c.status === 'aguardando').sort((a,b) => new Date(b.created_at) - new Date(a.created_at)); },
-  getChamadosByMotorista(motoristaId) { return this._get('chamados').filter(c => c.motorista_id === motoristaId).sort((a,b) => new Date(b.created_at) - new Date(a.created_at)); },
-  updateChamadoStatus(id, status) {
-    const chamados = this._get('chamados');
-    const idx = chamados.findIndex(c => c.id === id);
-    if (idx >= 0) { chamados[idx].status = status; this._set('chamados', chamados); }
+  getChamadoById(id) {
+    const chamado = this._get('chamados').find(c => c.id === id) || null;
+    return chamado ? this.comStatusAtual(chamado, this.getAtendimentoByChamado(id)) : null;
+  },
+  getChamadosAbertos(oficinaId) {
+    const indisponiveis = new Set(this._get('atendimentos')
+      .filter(a => this.atendimentoConfirmado(a) || a.status === 'proposta' && a.oficina_id === oficinaId)
+      .map(a => a.chamado_id));
+    return this._get('chamados').filter(c => c.status === 'aguardando' && !indisponiveis.has(c.id))
+      .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+  getChamadosByMotorista(motoristaId) {
+    const atendimentos = new Map(this._get('atendimentos').filter(a => this.atendimentoConfirmado(a)).map(a => [a.chamado_id, a]));
+    return this._get('chamados').filter(c => c.motorista_id === motoristaId)
+      .map(c => this.comStatusAtual(c, atendimentos.get(c.id))).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
   },
 
   // ---- DIAGNOSTICO PERGUNTAS ----
-  savePergunta(chamadoId, pergunta, resposta, ordem) {
-    const perguntas = this._get('diagnostico_perguntas');
-    perguntas.push({ id: this._id(), chamado_id: chamadoId, pergunta, resposta, ordem, created_at: this._now() });
-    this._set('diagnostico_perguntas', perguntas);
-  },
   getPerguntasByChamado(chamadoId) {
-    return this._get('diagnostico_perguntas').filter(p => p.chamado_id === chamadoId);
+    const chamado = this.getChamadoById(chamadoId);
+    return chamado?.perguntas || this._get('diagnostico_perguntas')
+      .filter(p => p.chamado_id === chamadoId && p.resposta?.trim()).sort((a,b) => a.ordem - b.ordem);
   },
 
   // ---- ATENDIMENTOS ----
-  createAtendimento(chamadoId, oficinaId) {
+  atendimentoConfirmado(atendimento) {
+    return ['aceito', 'aguardando_conclusao', 'concluido'].includes(atendimento?.status);
+  },
+  registrarInteresse(chamadoId, oficinaId) {
+    const chamado = this.getChamadoById(chamadoId);
+    if (chamado?.status !== 'aguardando' || !this.getOficinaProfile(oficinaId)) return null;
     const atendimentos = this._get('atendimentos');
-    const existing = atendimentos.find(a => a.chamado_id === chamadoId && a.status !== 'recusado');
-    if (existing) return existing;
-    const a = { id: this._id(), chamado_id: chamadoId, oficina_id: oficinaId, status: 'aceito', iniciado_em: this._now(), concluido_em: null };
-    atendimentos.push(a);
+    if (atendimentos.some(a => a.chamado_id === chamadoId && a.oficina_id === oficinaId && a.status === 'proposta')) return null;
+    const proposta = { id: this._id(), chamado_id: chamadoId, oficina_id: oficinaId, status: 'proposta', proposto_em: this._now() };
+    atendimentos.push(proposta);
     this._set('atendimentos', atendimentos);
-    DB.updateChamadoStatus(chamadoId, 'em_atendimento');
-    return a;
+    return proposta;
+  },
+  getPropostasByChamado(chamadoId) {
+    return this._get('atendimentos').filter(a => a.chamado_id === chamadoId && a.status === 'proposta');
+  },
+  getParticipacaoOficina(chamadoId, oficinaId) {
+    return this._get('atendimentos').find(a => a.chamado_id === chamadoId && a.oficina_id === oficinaId && a.status !== 'recusado') || null;
+  },
+  escolherOficina(chamadoId, propostaId, motoristaId) {
+    const chamado = this.getChamadoById(chamadoId);
+    if (chamado?.motorista_id !== motoristaId || chamado.status !== 'aguardando') return null;
+    const atendimentos = this._get('atendimentos');
+    const propostas = atendimentos.filter(a => a.chamado_id === chamadoId && a.status === 'proposta');
+    const escolhida = propostas.find(a => a.id === propostaId);
+    if (!escolhida) return null;
+    const outras = propostas.filter(a => a !== escolhida);
+    escolhida.status = 'aceito';
+    escolhida.iniciado_em = this._now();
+    escolhida.concluido_em = null;
+    outras.forEach(a => { a.status = 'nao_selecionado'; });
+    this._set('atendimentos', atendimentos);
+    return { atendimento: escolhida, outras };
   },
   getAtendimentoByChamado(chamadoId) {
-    return this._get('atendimentos').find(a => a.chamado_id === chamadoId && a.status !== 'recusado') || null;
+    return this._get('atendimentos').find(a => a.chamado_id === chamadoId && this.atendimentoConfirmado(a)) || null;
   },
   getAtendimentosByOficina(oficinaId) {
-    return this._get('atendimentos').filter(a => a.oficina_id === oficinaId).sort((a,b) => new Date(b.iniciado_em) - new Date(a.iniciado_em));
+    return this._get('atendimentos').filter(a => a.oficina_id === oficinaId)
+      .sort((a,b) => new Date(b.iniciado_em || b.proposto_em) - new Date(a.iniciado_em || a.proposto_em));
   },
   getAtendimentosByMotorista(motoristaId) {
     const chamados = this.getChamadosByMotorista(motoristaId);
-    const ids = chamados.map(c => c.id);
-    return this._get('atendimentos').filter(a => ids.includes(a.chamado_id)).sort((a,b) => new Date(b.iniciado_em) - new Date(a.iniciado_em));
-  },
-  getPropostasByChamado(chamadoId) {
-    return []; // mock to prevent crashes since propostas were removed
+    const ids = new Set(chamados.map(c => c.id));
+    return this._get('atendimentos').filter(a => ids.has(a.chamado_id) && this.atendimentoConfirmado(a))
+      .sort((a,b) => new Date(b.iniciado_em) - new Date(a.iniciado_em));
   },
   solicitarConclusao(id) {
     const atendimentos = this._get('atendimentos');
     const idx = atendimentos.findIndex(a => a.id === id);
-    if (idx >= 0) {
+    if (idx >= 0 && atendimentos[idx].status === 'aceito') {
       atendimentos[idx].status = 'aguardando_conclusao';
       this._set('atendimentos', atendimentos);
+      return true;
     }
+    return false;
   },
   concludeAtendimento(id) {
     const atendimentos = this._get('atendimentos');
     const idx = atendimentos.findIndex(a => a.id === id);
-    if (idx >= 0) {
+    if (idx >= 0 && atendimentos[idx].status === 'aguardando_conclusao') {
       atendimentos[idx].status = 'concluido';
       atendimentos[idx].concluido_em = this._now();
       this._set('atendimentos', atendimentos);
-      DB.updateChamadoStatus(atendimentos[idx].chamado_id, 'concluido');
+      return true;
     }
+    return false;
   },
   getAtendimentoById(id) { return this._get('atendimentos').find(a => a.id === id) || null; },
   
   // ---- AVALIACOES ----
   saveAvaliacao(atendimentoId, oficinaId, motoristaId, notas, comentario) {
     const avs = this._get('avaliacoes');
+    const existing = avs.find(a => a.atendimento_id === atendimentoId);
+    if (existing) return existing;
     const media = (notas.transparencia + notas.prazo + notas.qualidade + notas.organizacao) / 4;
     const a = { 
       id: this._id(), 
@@ -245,10 +340,13 @@ const DB = {
   },
 
   // ---- NOTIFICACOES ----
-  addNotif(userId, titulo, texto) {
+  addNotif(userId, titulo, texto, destino = null) {
     const notifs = this._get('notifs');
-    notifs.unshift({ id: this._id(), user_id: userId, titulo, texto, lida: false, created_at: this._now() });
-    this._set('notifs', notifs);
+    notifs.unshift({ id: this._id(), user_id: userId, titulo, texto, destino, lida: false, created_at: this._now() });
+    try { this._set('notifs', notifs); }
+    catch (error) {
+      if (error.name !== 'QuotaExceededError') throw error;
+    }
   },
   getNotifsByUser(userId) { return this._get('notifs').filter(n => n.user_id === userId); },
   markAllRead(userId) {
@@ -259,11 +357,54 @@ const DB = {
   // ---- STATS OFICINA ----
   getStatsOficina(oficinaId) {
     const ats = this.getAtendimentosByOficina(oficinaId);
-    const total = ats.length;
     const concluidos = ats.filter(a => a.status === 'concluido').length;
-    const emAndamento = ats.filter(a => a.status === 'aceito').length;
-    const mesAtual = new Date().getMonth();
-    const concluidosMes = ats.filter(a => a.status === 'concluido' && new Date(a.concluido_em).getMonth() === mesAtual).length;
-    return { total, concluidos, emAndamento, concluidosMes, avaliacao: 4.8 };
+    const emAndamento = ats.filter(a => ['aceito', 'aguardando_conclusao'].includes(a.status)).length;
+    const reviews = this.getAvaliacoesPublicas(oficinaId);
+    const avaliacao = reviews.length ? (reviews.reduce((sum, a) => sum + a.media, 0) / reviews.length).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : null;
+    return { concluidos, emAndamento, avaliacao };
+  },
+
+  // ---- DEMO MODE ----
+  setupDemoData(type) {
+    if (!Object.hasOwn(this.demoPerfis, type)) return;
+    const user = this.getDemoUser(type);
+    Object.keys(this.demoPerfis).filter(key => key !== type).forEach(key => this.getDemoUser(key));
+    this.setSession(user);
+  },
+
+  getDemoUser(type) {
+    const { email, tipo, nome } = this.demoPerfis[type];
+    const users = this._get('users');
+    let user = users.find(u => u.email === email && u.user_type === tipo);
+    
+    if (!user) {
+      user = { id: this._id(), email, user_type: tipo, created_at: this._now() };
+      this._set('users', [...users, user]);
+      
+      if (tipo === 'motorista') {
+        this.saveMotoristaProfile(user.id, { nome: 'Rafael Lima', telefone: '(11) 98888-8888', foto_url: '' });
+        this.saveVeiculo(user.id, { marca: 'Honda', modelo: 'Civic', ano: '2021', placa: 'ABC-1234', cor: 'Prata' });
+        this.saveVeiculo(user.id, { marca: 'Fiat', modelo: 'Toro', ano: '2023', placa: 'XYZ-9876', cor: 'Branca' });
+        const v = this.getVeiculosByMotorista(user.id)[0];
+        const draft = { id: this._id(), veiculoId: v.id, categoria: 'freios', respostas: ['Chiado ou rangido', 'Há alguns dias', 'Às vezes', 'O ruído aparece principalmente em baixa velocidade.'] };
+        this.publicarChamado(user.id, draft, Triagem.resumo(draft), Triagem.perguntas(draft.categoria).map((p, i) => ({ pergunta: p.texto, resposta: draft.respostas[i] })));
+      } else {
+        const central = type === 'central';
+        const sobre = central ? 'Diagnóstico elétrico, suspensão e revisão de freios.' : 'Mecânica geral e manutenção preventiva.';
+        this.saveOficinaProfile(user.id, { nome_oficina: nome, cnpj: central ? '00.000.000/0002-00' : '00.000.000/0001-00', sobre, foto_url: '' });
+        // Adiciona uma avaliação fictícia para enriquecer o perfil
+        const m = { id: 'mock_mot_1', user_id: 'mock_mot_1', nome: 'Carlos (Cliente Satisfeito)', created_at: this._now() };
+        let profs = this._get('motorista_profiles');
+        if (!profs.find(p => p.id === 'mock_mot_1')) {
+          profs.push(m);
+          this._set('motorista_profiles', profs);
+        }
+        this.saveAvaliacao(central ? 'mock_at_2' : 'mock_at_1', user.id, m.id,
+          { transparencia: 5, prazo: central ? 4 : 5, qualidade: central ? 5 : 4, organizacao: 5 },
+          central ? 'Explicaram os serviços e os valores com clareza.' : 'Ótimo atendimento! Muito ágeis.');
+      }
+    }
+    
+    return user;
   }
 };

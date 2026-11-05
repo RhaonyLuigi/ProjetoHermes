@@ -5,11 +5,11 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #C5CAE9;
+  --bg: linear-gradient(135deg, #F0F2FF 0%, #D4D9F7 50%, #C5CAE9 100%);
   --white: #FFFFFF;
   --primary: #007AFF;
   --primary-dark: #0056CC;
-  --gray-light: #E0E0E0;
+  --gray-light: #E8EBF2;
   --gray-mid: #9E9E9E;
   --gray-dark: #424242;
   --text: #1A1A2E;
@@ -19,15 +19,16 @@
   --card-radius: 20px;
   --btn-radius: 12px;
   --input-radius: 10px;
-  --shadow: 0 4px 24px rgba(0,0,0,0.10);
-  --shadow-md: 0 8px 32px rgba(0,0,0,0.14);
-  --transition: 0.2s ease;
+  --shadow: 0 8px 24px rgba(0,0,0,0.06);
+  --shadow-md: 0 12px 32px rgba(0,0,0,0.1);
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html, body {
   height: 100%;
   font-family: 'Inter', sans-serif;
   background: var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
@@ -127,11 +128,18 @@ html, body {
    CARDS
    ============================================================ */
 .card {
-  background: var(--white);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: var(--card-radius);
   box-shadow: var(--shadow);
   padding: 24px;
   margin-bottom: 16px;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 .card-sm { padding: 16px; }
 .card-title {
@@ -199,8 +207,9 @@ textarea.input { resize: vertical; min-height: 90px; }
   color: var(--white);
   box-shadow: 0 4px 16px rgba(0,122,255,0.35);
 }
-.btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+.btn-primary:hover { background: var(--primary-dark); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,122,255,0.45); }
 .btn-primary:active { transform: translateY(0); }
+.btn:active { transform: scale(0.97) !important; }
 .btn-secondary {
   background: var(--gray-light);
   color: var(--gray-dark);

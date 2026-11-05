@@ -6,9 +6,6 @@ const App = {
   currentScreen: null,
   currentParam: null,
   history: [],
-  currentChamadoId: null,
-  currentAtendimentoId: null,
-  pollInterval: null,
 
   // ---- TOAST ----
   toast(msg, type = 'info') {
@@ -24,56 +21,102 @@ const App = {
     const sc = document.getElementById('screen-container');
     sc.innerHTML = html;
     sc.scrollTop = 0;
+    window.scrollTo(0, 0);
   },
 
   // ---- BOTTOM NAV ----
   showNav(type) {
+    if (type === 'none') return this.hideNav();
     const nav = document.getElementById('bottom-nav');
-    if (!nav) return;
-    if (type === 'none') { nav.classList.add('hidden'); return; }
+    const common = [['chats', 'chat', 'Conversas'], ['notificacoes', 'bell', 'Avisos'], ['perfil', 'user', 'Perfil']];
+    const menus = {
+      motorista: [['home', 'home', 'Início'], ['chat-ia', 'spark', 'Triagem'], ['veiculos', 'car', 'Garagem'], ...common],
+      oficina: [['dashboard', 'grid', 'Painel'], ['chamados', 'list', 'Chamados'], ...common],
+      admin: [['admin-dashboard', 'shield', 'Revisões'], ['perfil', 'user', 'Perfil']]
+    };
+    const session = DB.getSession();
+    const demo = DB.isDemo(session);
+    const role = { motorista: 'Motorista', oficina: 'Oficina', admin: 'Moderação' }[type];
     nav.classList.remove('hidden');
-    if (type === 'motorista') {
-      nav.innerHTML = `
-        <button class="nav-item" data-screen="home" onclick="App.goHome()"><span class="nav-icon">🏠</span><span class="nav-label">Início</span></button>
-        <button class="nav-item" data-screen="chat-ia" onclick="App.navigate('chat-ia')"><span class="nav-icon">🤖</span><span class="nav-label">Chat IA</span></button>
-        <button class="nav-item" data-screen="chats" onclick="App.navigate('chats')"><span class="nav-icon">💬</span><span class="nav-label">Chats</span></button>
-        <button class="nav-item" data-screen="notificacoes" onclick="App.navigate('notificacoes')"><span class="nav-icon">🔔</span><span class="nav-label">Avisos</span></button>
-        <button class="nav-item" data-screen="perfil" onclick="App.navigate('perfil')"><span class="nav-icon">👤</span><span class="nav-label">Perfil</span></button>`;
-    } else if (type === 'oficina') {
-      nav.innerHTML = `
-        <button class="nav-item" data-screen="dashboard" onclick="App.navigate('dashboard')"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></button>
-        <button class="nav-item" data-screen="chamados" onclick="App.navigate('chamados')"><span class="nav-icon">📋</span><span class="nav-label">Chamados</span></button>
-        <button class="nav-item" data-screen="chats" onclick="App.navigate('chats')"><span class="nav-icon">💬</span><span class="nav-label">Chats</span></button>
-        <button class="nav-item" data-screen="notificacoes" onclick="App.navigate('notificacoes')"><span class="nav-icon">🔔</span><span class="nav-label">Avisos</span></button>
-        <button class="nav-item" data-screen="perfil" onclick="App.navigate('perfil')"><span class="nav-icon">👤</span><span class="nav-label">Perfil</span></button>`;
-    } else if (type === 'admin') {
-      nav.innerHTML = `
-        <button class="nav-item" data-screen="admin-dashboard" onclick="App.navigate('admin-dashboard')"><span class="nav-icon">🛡️</span><span class="nav-label">Revisões</span></button>
-        <button class="nav-item" data-screen="perfil" onclick="App.navigate('perfil')"><span class="nav-icon">👤</span><span class="nav-label">Perfil</span></button>`;
-    }
+    document.getElementById('app').classList.add('has-nav');
+    const bar = document.getElementById('app-bar');
+    bar.hidden = false;
+    bar.innerHTML = `<div class="bar-brand">${Screens.brand()}</div><div class="bar-context"><span class="bar-role">${role}</span><span class="bar-divider"></span><span>Ambiente local</span></div>
+      ${demo ? `<div class="bar-actions"><span class="demo-tag"><i></i> Demonstração</span>
+        <details class="demo-switch"><summary class="switch-button">${Screens.icon('swap', 16)} Trocar perfil</summary>
+          <div class="demo-options">${Object.entries(DB.demoPerfis).map(([key, perfil]) => `<button type="button" data-demo="${key}" ${perfil.email === session.email ? 'disabled' : ''} onclick="App.switchDemo('${key}')">${perfil.nome} ${perfil.email === session.email ? '<small>Perfil atual</small>' : ''}</button>`).join('')}</div>
+        </details></div>` : ''}`;
+    nav.innerHTML = `<div class="nav-brand">${Screens.brand()}<small>ASSISTÊNCIA AUTOMOTIVA</small></div>
+      <div class="nav-label-group">${role.toUpperCase()}</div>
+      <div class="nav-links">${menus[type].map(([screen, icon, label]) => `<button class="nav-item" data-screen="${screen}" onclick="App.navigate('${screen}')"><span class="nav-icon">${Screens.icon(icon, 18)}</span><span class="nav-label">${label}</span>${screen === 'notificacoes' ? '<span class="nav-dot" hidden></span>' : ''}</button>`).join('')}</div>
+      <div class="nav-foot"><span class="local-indicator"></span><div><strong>${demo ? 'Modo demonstração' : 'Sessão local'}</strong><small>Dados neste navegador</small></div></div>`;
+    this.refreshUnread();
     this.setActiveNav();
   },
 
   setActiveNav(screen) {
-    const s = screen || this.currentScreen;
+    const aliases = { aguardando: 'home', 'chat-oficina': 'chats', 'detalhe-oficina': 'chamados', procedimento: 'chats' };
+    const s = screen || aliases[this.currentScreen] || this.currentScreen;
     document.querySelectorAll('.nav-item').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.screen === s);
+      if (btn.dataset.screen === s) btn.setAttribute('aria-current', 'page');
+      else btn.removeAttribute('aria-current');
     });
   },
 
-  hideNav() { document.getElementById('bottom-nav').classList.add('hidden'); },
+  hideNav() {
+    document.getElementById('bottom-nav').classList.add('hidden');
+    document.getElementById('app').classList.remove('has-nav');
+    document.getElementById('app-bar').hidden = true;
+  },
+
+  refreshUnread() {
+    const dot = document.querySelector('.nav-dot');
+    const session = DB.getSession();
+    if (dot && session) dot.hidden = !DB.getNotifsByUser(session.id).some(n => !n.lida);
+  },
+
+  switchDemo(type) {
+    if (!DB.isDemo(DB.getSession())) return;
+    DB.setupDemoData(type);
+    this.history = [];
+    this.currentScreen = null;
+    this.boot();
+  },
 
   // ---- NAVIGATE ----
   navigate(screen, param) {
+    const session = DB.getSession();
+    const publicScreens = ['login', 'register', 'forgot'];
+    if (!session && !publicScreens.includes(screen)) return this.navigate('login');
+    const role = session?.user_type;
+    const motorista = ['home', 'chat-ia', 'aguardando', 'veiculos', 'veiculo-form', 'avaliar', 'checkin-motorista'];
+    const oficina = ['dashboard', 'chamados', 'detalhe-oficina', 'procedimento', 'checkin-oficina'];
+    if (motorista.includes(screen) && role !== 'motorista' || oficina.includes(screen) && role !== 'oficina' ||
+        screen.startsWith('admin-') && role !== 'admin' || role === 'admin' && ['chats', 'notificacoes'].includes(screen)) return this.goHome();
+
+    if (screen === 'aguardando' || screen === 'detalhe-oficina') {
+      const chamado = DB.getChamadoById(param);
+      const allowed = chamado && (role === 'motorista'
+        ? chamado.motorista_id === session.id && chamado.status !== 'em_diagnostico'
+        : chamado.status === 'aguardando' || DB.getParticipacaoOficina(param, session.id));
+      if (!allowed) return this.goHome();
+    }
+    if (['chat-oficina', 'procedimento', 'avaliar'].includes(screen)) {
+      const atendimento = DB.getAtendimentoById(param);
+      const chamado = atendimento && DB.getChamadoById(atendimento.chamado_id);
+      if (!chamado || !DB.atendimentoConfirmado(atendimento) || !(role === 'oficina' && atendimento.oficina_id === session.id ||
+          role === 'motorista' && chamado.motorista_id === session.id)) return this.goHome();
+      if (screen === 'procedimento' && atendimento.status !== 'aceito' ||
+          screen === 'avaliar' && atendimento.status !== 'aguardando_conclusao') return this.navigate('chat-oficina', param);
+    }
+    if (screen === 'perfil-oficina' && !DB.getOficinaProfile(param) || screen === 'admin-revisao' && !DB.getAvaliacaoById(param)) return this.goHome();
+
     if (this.currentScreen && this.currentScreen !== screen) {
       this.history.push({ screen: this.currentScreen, param: this.currentParam });
     }
     this.currentScreen = screen;
     this.currentParam = param;
-    if (this.pollInterval) { clearInterval(this.pollInterval); this.pollInterval = null; }
-
-    const session = DB.getSession();
-
     switch (screen) {
       case 'login': this.hideNav(); this.render(Screens.login()); this.bindLogin(); break;
       case 'register': this.hideNav(); this.render(Screens.register()); this.bindRegister(); break;
@@ -81,29 +124,28 @@ const App = {
       case 'checkin-motorista': this.hideNav(); this.render(Screens.checkinMotorista()); this.bindCheckinMotorista(); break;
       case 'checkin-oficina': this.hideNav(); this.render(Screens.checkinOficina()); this.bindCheckinOficina(); break;
       case 'veiculo-form': this.hideNav(); this.render(Screens.cadastrarVeiculo()); this.bindVeiculoForm(); break;
-      case 'chat-ia': this.showNav('motorista'); this.render(Screens.chatIA()); this.bindChatIA(); this.setActiveNav('chat-ia'); break;
+      case 'chat-ia': this.showNav('motorista'); this.bindChatIA(); break;
       case 'aguardando':
-        this.currentChamadoId = param;
         this.showNav('motorista');
-        this.render(Screens.aguardandoOficinas(param));
-        this.bindAguardando(param);
-        this.setActiveNav('home');
-        this.startPollingAguardando(param);
+        this.render(Screens.detalheChamado(DB.getChamadoById(param), false));
+        this.bindEscolherOficina(param);
+        break;
+      case 'detalhe-oficina':
+        this.showNav('oficina');
+        this.render(Screens.detalheChamado(DB.getChamadoById(param), true));
+        this.bindAceitar();
         break;
       case 'chat-oficina':
-        this.currentAtendimentoId = param;
+        this.showNav(role);
         this.render(Screens.chatOficina(param));
         this.bindChatOficina(param);
-        if (session && session.user_type === 'motorista') this.showNav('motorista');
-        else this.showNav('oficina');
-        this.startPollingChat(param);
         break;
       case 'veiculos': this.showNav('motorista'); this.render(Screens.meusVeiculos()); this.bindMeusVeiculos(); this.setActiveNav('veiculos'); break;
       case 'chats': { const t = session && session.user_type === 'oficina' ? 'oficina' : 'motorista'; this.showNav(t); this.render(Screens.chatsLista()); this.bindChatsLista(); this.setActiveNav('chats'); break; }
-      case 'notificacoes': this.showNav(session && session.user_type === 'oficina' ? 'oficina' : 'motorista'); this.render(Screens.notificacoes()); this.setActiveNav('notificacoes'); break;
-      case 'dashboard': this.showNav('oficina'); this.render(Screens.dashboardOficina()); this.bindDashboard(); this.setActiveNav('dashboard'); break;
+      case 'notificacoes': this.showNav(role); this.render(Screens.notificacoes()); DB.markAllRead(session.id); this.refreshUnread(); break;
+      case 'dashboard': this.showNav('oficina'); this.render(Screens.dashboardOficina()); break;
       case 'chamados': this.showNav('oficina'); this.render(Screens.chamadosOficina()); this.bindChamados(); this.setActiveNav('chamados'); break;
-      case 'procedimento': this.render(Screens.registrarProcedimento(param)); this.bindProcedimento(param); break;
+      case 'procedimento': this.showNav('oficina'); this.render(Screens.registrarProcedimento(param)); this.bindProcedimento(param); break;
       case 'perfil': const t = session && session.user_type === 'oficina' ? 'oficina' : (session && session.user_type === 'admin' ? 'admin' : 'motorista'); this.showNav(t); this.render(Screens.perfil()); this.bindPerfil(); this.setActiveNav('perfil'); break;
       case 'home': this.showNav('motorista'); this.render(Screens.dashboardMotorista()); this.setActiveNav('home'); break;
       case 'avaliar': this.showNav('none'); this.render(Screens.avaliarOficina(param)); this.bindAvaliar(param); break;
@@ -117,14 +159,8 @@ const App = {
   goBack() {
     if (this.history.length > 0) {
       const prev = this.history.pop();
-      // To avoid pushing it again, we manually navigate without pushing
-      const s = prev.screen;
-      const p = prev.param;
-      this.history.pop(); // avoid double push logic trick or just let it push and clear?
-      // Actually navigate pushes current, so let's just clear history
       this.currentScreen = null; 
-      this.navigate(s, p);
-      this.history.pop(); // remove the duplicate we just pushed
+      this.navigate(prev.screen, prev.param);
     } else {
       this.goHome();
     }
@@ -134,6 +170,7 @@ const App = {
     const session = DB.getSession();
     if (!session) return this.navigate('login');
     if (session.user_type === 'oficina') return this.navigate('dashboard');
+    if (session.user_type === 'admin') return this.navigate('admin-dashboard');
     this.navigate('home');
   },
 
@@ -154,85 +191,48 @@ const App = {
     }
   },
 
-  // ---- POLLING ----
-  startPollingAguardando(chamadoId) {
-    this.pollInterval = setInterval(() => {
-      const chamado = DB.getChamadoById(chamadoId);
-      if (chamado && chamado.status === 'em_atendimento') {
-        clearInterval(this.pollInterval);
-        this.render(Screens.aguardandoOficinas(chamadoId));
-        this.bindAguardando(chamadoId);
-        this.toast('Uma oficina aceitou seu chamado! 🎉', 'success');
-      }
-    }, 3000);
-  },
-
-  startPollingChat(atendimentoId) {
-    let lastCount = DB.getMsgsByAtendimento(atendimentoId).length;
-    const session = DB.getSession();
-    this.pollInterval = setInterval(() => {
-      const msgs = DB.getMsgsByAtendimento(atendimentoId);
-      if (msgs.length > lastCount) {
-        // Only render messages from the OTHER party to avoid duplication
-        const newMsgs = msgs.slice(lastCount).filter(m => m.remetente_id !== session.id);
-        lastCount = msgs.length;
-        const container = document.getElementById('chat-oficina-messages');
-        if (container && newMsgs.length > 0) {
-          newMsgs.forEach(m => {
-            const div = document.createElement('div');
-            div.className = 'bubble bubble-oficina';
-            let content = m.conteudo;
-            if (m.foto_url) {
-              content = `<img src="${m.foto_url}" style="max-width:100%;border-radius:8px;margin-bottom:4px"/><br>` + content;
-            }
-            div.innerHTML = `${content}<span class="bubble-time">${Screens.formatTime(m.enviado_em)}</span>`;
-            container.appendChild(div);
-          });
-          container.scrollTop = container.scrollHeight;
-        }
-      }
-    }, 2000);
-  },
-
   // ---- BIND: LOGIN ----
   bindLogin() {
-    let clicks = 0;
-    let timer = null;
-    const logo = document.getElementById('logo-login');
-    if (logo) {
-      logo.onclick = () => {
-        clicks++;
-        if (clicks === 1) timer = setTimeout(() => clicks = 0, 3000);
-        if (clicks >= 5) {
-          clearTimeout(timer);
-          clicks = 0;
-          document.getElementById('admin-btn-container').innerHTML = `<button class="btn btn-secondary" style="background:#FF9500;color:white" onclick="App.loginAdmin()">Entrar como Admin</button>`;
-        }
-      };
-    }
-
-    document.getElementById('btn-entrar').onclick = () => {
+    const form = document.getElementById('login-form');
+    form.onsubmit = async event => {
+      event.preventDefault();
       const email = document.getElementById('login-email').value.trim();
       const senha = document.getElementById('login-senha').value;
-      if (!email || !senha) return this.toast('Preencha todos os campos.', 'error');
-      const user = DB.findUser(email, senha);
-      if (!user) return this.toast('Email ou senha incorretos.', 'error');
-      DB.setSession(user);
-      this.boot();
+      const submit = document.getElementById('btn-entrar');
+      submit.disabled = true;
+      try {
+        const user = await DB.findUser(email, senha);
+        if (!form.isConnected) return;
+        if (!user) return this.toast('E-mail ou senha incorretos.', 'error');
+        DB.setSession(user);
+        this.history = [];
+        this.currentScreen = null;
+        this.boot();
+      } catch {
+        this.toast('Use o servidor local para acessar sua conta.', 'error');
+      } finally {
+        submit.disabled = false;
+      }
     };
     document.getElementById('link-forgot').onclick = () => this.navigate('forgot');
     document.getElementById('link-cadastro').onclick = () => this.navigate('register');
-  },
-
-  loginAdmin() {
-    const senha = prompt("Digite a senha do Administrador:");
-    if (senha === "teste123") {
+    document.getElementById('btn-demo-admin').onclick = () => {
       DB.setSession({ id: 'admin', user_type: 'admin', email: 'admin@hermes' });
-      this.toast('Bem-vindo, Administrador!', 'success');
-      this.navigate('admin-dashboard');
-    } else {
-      if (senha !== null) this.toast('Senha incorreta.', 'error');
-    }
+      this.history = [];
+      this.boot();
+    };
+
+    const btnDemoMot = document.getElementById('btn-demo-mot');
+    if (btnDemoMot) btnDemoMot.onclick = () => {
+      DB.setupDemoData('motorista');
+      this.boot();
+    };
+
+    const btnDemoOfi = document.getElementById('btn-demo-ofi');
+    if (btnDemoOfi) btnDemoOfi.onclick = () => {
+      DB.setupDemoData('oficina');
+      this.boot();
+    };
   },
 
   // ---- BIND: REGISTER ----
@@ -245,18 +245,29 @@ const App = {
       btnM.onclick = () => { selectedType = 'motorista'; btnM.classList.add('active'); btnO.classList.remove('active'); };
       btnO.onclick = () => { selectedType = 'oficina'; btnO.classList.add('active'); btnM.classList.remove('active'); };
     }
-    document.getElementById('btn-criar').onclick = () => {
-      const email = document.getElementById('reg-email').value.trim();
+    const submit = document.getElementById('btn-criar');
+    submit.onclick = async () => {
+      const emailInput = document.getElementById('reg-email');
+      const email = emailInput.value.trim();
       const senha = document.getElementById('reg-senha').value;
       const confirm = document.getElementById('reg-confirm').value;
       if (!email || !senha) return this.toast('Preencha todos os campos.', 'error');
+      if (!emailInput.reportValidity()) return;
       if (senha !== confirm) return this.toast('As senhas não coincidem.', 'error');
       if (senha.length < 6) return this.toast('Senha deve ter ao menos 6 caracteres.', 'error');
-      const result = DB.createUser(email, senha, selectedType);
-      if (result.error) return this.toast(result.error, 'error');
-      DB.setSession(result.user);
-      this.toast('Conta criada! Complete seu perfil.', 'success');
-      this.navigate(selectedType === 'oficina' ? 'checkin-oficina' : 'checkin-motorista');
+      submit.disabled = true;
+      try {
+        const result = await DB.createUser(email, senha, selectedType);
+        if (result.error) return this.toast(result.error, 'error');
+        if (!submit.isConnected) return;
+        DB.setSession(result.user);
+        this.toast('Conta criada. Complete seu perfil.', 'success');
+        this.boot();
+      } catch {
+        this.toast('Use o servidor local para criar sua conta.', 'error');
+      } finally {
+        submit.disabled = false;
+      }
     };
     document.getElementById('link-login').onclick = () => this.navigate('login');
   },
@@ -264,17 +275,10 @@ const App = {
   // ---- BIND: FORGOT ----
   bindForgot() {
     document.getElementById('btn-back-forgot').onclick = () => this.navigate('login');
-    document.getElementById('btn-enviar-reset').onclick = () => {
-      const email = document.getElementById('forgot-email').value.trim();
-      if (!email) return this.toast('Informe seu email.', 'error');
-      this.toast('Link enviado para ' + email, 'success');
-      setTimeout(() => this.navigate('login'), 2000);
-    };
   },
 
   // ---- BIND: CHECKIN MOTORISTA ----
   bindCheckinMotorista() {
-    document.getElementById('toggle-oficina').onclick = () => this.navigate('checkin-oficina');
     const circle = document.getElementById('avatar-motorista-circle');
     const input = document.getElementById('avatar-motorista-input');
     circle.onclick = () => input.click();
@@ -296,13 +300,12 @@ const App = {
       if (!nome || !tel) return this.toast('Preencha nome e telefone.', 'error');
       DB.saveMotoristaProfile(session.id, { nome, telefone: tel, foto_url: document.getElementById('avatar-motorista-circle').dataset.foto || '' });
       this.toast('Perfil salvo!', 'success');
-      this.navigate('veiculo-form');
+      this.navigate('veiculo-form', 'home');
     };
   },
 
   // ---- BIND: CHECKIN OFICINA ----
   bindCheckinOficina() {
-    document.getElementById('toggle2-motorista').onclick = () => this.navigate('checkin-motorista');
     const circle = document.getElementById('avatar-oficina-circle');
     const input = document.getElementById('avatar-oficina-input');
     circle.onclick = () => input.click();
@@ -331,6 +334,7 @@ const App = {
 
   // ---- BIND: VEICULO FORM ----
   bindVeiculoForm() {
+    document.getElementById('btn-back-veiculo').onclick = () => this.goBack();
     document.getElementById('btn-salvar-veiculo').onclick = () => {
       const session = DB.getSession();
       if (!session) return this.navigate('login');
@@ -340,267 +344,17 @@ const App = {
       const placa = document.getElementById('v-placa').value.trim().toUpperCase();
       const cor = document.getElementById('v-cor').value.trim();
       if (!marca || !modelo || !ano || !placa) return this.toast('Preencha todos os campos obrigatórios.', 'error');
+      if (!/^\d{4}$/.test(ano)) return this.toast('Informe o ano com quatro dígitos.', 'error');
       DB.saveVeiculo(session.id, { marca, modelo, ano, placa, cor });
       this.toast('Veículo cadastrado!', 'success');
-      this.navigate('chat-ia');
+      this.navigate(this.currentParam || 'veiculos');
     };
-  },
-
-  // ---- BIND: CHAT IA ----
-  bindChatIA() {
-    const session = DB.getSession();
-    if (!session) return this.navigate('login');
-    AI.reset();
-    const veiculos = DB.getVeiculosByMotorista(session.id);
-    let chamado = null;
-    let perguntaOrdem = 0;
-    let diagConcluido = false;
-
-    const addBubble = (text, type) => {
-      const msgs = document.getElementById('chat-ia-messages');
-      const div = document.createElement('div');
-      div.className = `bubble bubble-${type}`;
-      div.innerHTML = text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      msgs.appendChild(div);
-      msgs.scrollTop = msgs.scrollHeight;
-      return div;
-    };
-
-    const showTyping = () => {
-      const msgs = document.getElementById('chat-ia-messages');
-      const div = document.createElement('div');
-      div.className = 'typing-indicator';
-      div.id = 'typing';
-      div.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
-      msgs.appendChild(div);
-      msgs.scrollTop = msgs.scrollHeight;
-    };
-
-    const removeTyping = () => { const t = document.getElementById('typing'); if (t) t.remove(); };
-
-    const sendToIA = async (userMsg) => {
-      if (userMsg) {
-        addBubble(userMsg, 'user');
-        DB.savePergunta(chamado.id, AI.history.length > 0 ? AI.history[AI.history.length - 1].content : 'Resposta', userMsg, perguntaOrdem++);
-      }
-      showTyping();
-      const input = document.getElementById('chat-ia-input');
-      const sendBtn = document.getElementById('chat-ia-send');
-      if (input) input.disabled = true;
-      if (sendBtn) sendBtn.disabled = true;
-
-      const response = await AI.chat(userMsg || '', veiculos);
-      removeTyping();
-      if (input) input.disabled = false;
-      if (sendBtn) sendBtn.disabled = false;
-
-      addBubble(response, 'ia');
-
-      if (response.includes('[DIAGNOSTICO_CONCLUIDO]') && !diagConcluido) {
-        diagConcluido = true;
-        const diag = response.replace('[DIAGNOSTICO_CONCLUIDO]', '').trim();
-        DB.updateChamadoDiag(chamado.id, diag);
-        DB.updateChamadoStatus(chamado.id, 'aguardando');
-        
-        const mProfile = DB.getMotoristaProfile(session.id);
-        const nomeMot = mProfile ? mProfile.nome : 'Motorista';
-        const allOficinas = DB.getAllOficinas();
-        allOficinas.forEach(of => DB.addNotif(of.user_id, 'Novo chamado disponível', `${nomeMot} enviou um diagnóstico para análise.`));
-
-        const input2 = document.getElementById('chat-ia-input');
-        const row = document.getElementById('chat-ia-input-row');
-        if (input2) input2.disabled = true;
-        if (row) {
-          const btn = document.createElement('button');
-          btn.className = 'btn btn-primary';
-          btn.style.marginTop = '12px';
-          btn.textContent = '📋 VER STATUS DO CHAMADO';
-          btn.onclick = () => App.navigate('aguardando', chamado.id);
-          document.getElementById('chat-ia-messages').after(btn);
-        }
-      }
-    };
-
-    const handleSend = () => {
-      const input = document.getElementById('chat-ia-input');
-      if (!input || diagConcluido) return;
-      const text = input.value.trim();
-      if (!text) return;
-      input.value = '';
-      sendToIA(text);
-    };
-
-    document.getElementById('chat-ia-send').onclick = handleSend;
-    document.getElementById('chat-ia-input').onkeydown = (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-    };
-
-    const showVehicleSelector = () => {
-      const msgs = document.getElementById('chat-ia-messages');
-      const div = document.createElement('div');
-      div.className = 'bubble bubble-ia';
-      div.innerHTML = 'Olá! Qual veículo vamos diagnosticar hoje?<br>';
-      veiculos.forEach(v => {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-sm btn-primary';
-        btn.style.marginTop = '8px';
-        btn.style.width = '100%';
-        btn.textContent = `🚗 ${v.marca} ${v.modelo} (${v.placa || ''})`;
-        btn.onclick = () => {
-          chamado = DB.createChamado(session.id, v.id);
-          div.querySelectorAll('button').forEach(b => b.disabled = true);
-          addBubble(`Quero diagnosticar o ${v.marca} ${v.modelo}.`, 'user');
-          setTimeout(() => sendToIA(''), 600);
-        };
-        div.appendChild(btn);
-      });
-      if (veiculos.length === 0) {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-sm btn-primary';
-        btn.style.marginTop = '8px';
-        btn.style.width = '100%';
-        btn.textContent = '+ Cadastrar Veículo';
-        btn.onclick = () => App.navigate('veiculo-form');
-        div.appendChild(btn);
-      }
-      msgs.appendChild(div);
-      msgs.scrollTop = msgs.scrollHeight;
-    };
-
-    // Iniciar fluxo de escolha de veículo
-    setTimeout(showVehicleSelector, 300);
-  },
-
-  // ---- BIND: AGUARDANDO ----
-  bindAguardando(chamadoId) {
-    const btn = document.getElementById('btn-back-aguardando');
-    if (btn) btn.onclick = () => this.navigate('chat-ia');
-    const btnNovo = document.getElementById('btn-novo-chamado');
-    if (btnNovo) btnNovo.onclick = () => { AI.reset(); this.navigate('chat-ia'); };
-    const btnChat = document.getElementById('btn-iniciar-chat-oficina');
-    if (btnChat) {
-      btnChat.onclick = () => {
-        const atId = btnChat.dataset.atendimento;
-        this.navigate('chat-oficina', atId);
-      };
-    }
-  },
-
-  // ---- BIND: CHAT OFICINA ----
-  bindChatOficina(atendimentoId) {
-    const session = DB.getSession();
-    const msgs = document.getElementById('chat-oficina-messages');
-    if (msgs) msgs.scrollTop = msgs.scrollHeight;
-
-    document.getElementById('btn-back-chat').onclick = () => {
-      if (session.user_type === 'oficina') this.navigate('dashboard');
-      else {
-        const at = DB.getAtendimentoById(atendimentoId);
-        this.navigate('aguardando', at ? at.chamado_id : '');
-      }
-    };
-
-    document.getElementById('chat-oficina-send').onclick = () => {
-      const input = document.getElementById('chat-oficina-input');
-      const text = input ? input.value.trim() : '';
-      const fotoInput = document.getElementById('chat-foto-input');
-      const foto = fotoInput && fotoInput.dataset.foto ? fotoInput.dataset.foto : null;
-      
-      if (!text && !foto) return;
-      if (input) input.value = '';
-      if (fotoInput) {
-        fotoInput.dataset.foto = '';
-        fotoInput.value = '';
-      }
-      
-      const previewCont = document.getElementById('chat-foto-preview-container');
-      if (previewCont) previewCont.style.display = 'none';
-      
-      const msg = DB.saveMsg(atendimentoId, session.id, session.user_type, text, foto);
-      const at = DB.getAtendimentoById(atendimentoId);
-      if (at) {
-        const chamado = DB.getChamadoById(at.chamado_id);
-        if (chamado && session.user_type === 'oficina') {
-          DB.addNotif(chamado.motorista_id, 'Nova mensagem', `Nova mensagem da oficina.`);
-        }
-      }
-      const container = document.getElementById('chat-oficina-messages');
-      if (container) {
-        const div = document.createElement('div');
-        div.className = 'bubble bubble-user';
-        let content = text;
-        if (foto) content = `<img src="${foto}" style="max-width:100%;border-radius:8px;margin-bottom:4px"/><br>` + content;
-        div.innerHTML = `${content}<span class="bubble-time">${Screens.formatTime(msg.enviado_em)}</span>`;
-        container.appendChild(div);
-        container.scrollTop = container.scrollHeight;
-      }
-    };
-
-    document.getElementById('chat-oficina-input').onkeydown = (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('chat-oficina-send').click(); }
-    };
-
-    const procBtn = document.getElementById('btn-registrar-proc');
-    if (procBtn) procBtn.onclick = () => this.navigate('procedimento', atendimentoId);
-
-    const btnConcluirMot = document.getElementById('btn-concluir-motorista');
-    if (btnConcluirMot) {
-      btnConcluirMot.onclick = () => this.navigate('avaliar', atendimentoId);
-    }
-    
-    const btnVerAv = document.getElementById('btn-ver-avaliacoes');
-    if (btnVerAv) {
-      btnVerAv.onclick = () => this.navigate('perfil-oficina', btnVerAv.dataset.oficina);
-    }
-
-    const btnFoto = document.getElementById('btn-chat-foto');
-    const inputFoto = document.getElementById('chat-foto-input');
-    const previewCont = document.getElementById('chat-foto-preview-container');
-    const previewImg = document.getElementById('chat-foto-preview');
-    const btnRemoveFoto = document.getElementById('btn-remove-foto');
-
-    if (btnFoto && inputFoto) {
-      btnFoto.onclick = () => inputFoto.click();
-      inputFoto.onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          inputFoto.dataset.foto = ev.target.result;
-          if (previewCont && previewImg) {
-            previewImg.src = ev.target.result;
-            previewCont.style.display = 'block';
-          }
-        };
-        reader.readAsDataURL(file);
-      };
-    }
-    
-    if (btnRemoveFoto) {
-      btnRemoveFoto.onclick = () => {
-        inputFoto.dataset.foto = '';
-        inputFoto.value = '';
-        previewCont.style.display = 'none';
-      };
-    }
   },
 
   // ---- BIND: MEUS VEÍCULOS ----
   bindMeusVeiculos() {
     const btn = document.getElementById('btn-add-veiculo');
     if (btn) btn.onclick = () => this.navigate('veiculo-form');
-  },
-
-  // ---- BIND: DASHBOARD ----
-  bindDashboard() {
-    this._bindAceitarBtns();
-  },
-
-  // ---- BIND: CHAMADOS ----
-  bindChamados() {
-    this._bindAceitarBtns();
-    const btnHist = document.getElementById('btn-ver-historico');
-    if (btnHist) btnHist.onclick = () => this.navigate('dashboard');
   },
 
   // ---- BIND: CHATS LISTA ----
@@ -610,90 +364,80 @@ const App = {
     });
   },
 
-  _bindAceitarBtns() {
-    const session = DB.getSession();
-    document.querySelectorAll('[data-action="aceitar"]').forEach(btn => {
-      btn.onclick = () => {
-        const chamadoId = btn.dataset.chamado;
-        const chamado = DB.getChamadoById(chamadoId);
-        if (!chamado) return;
-        if (chamado.status === 'em_atendimento' || chamado.status === 'concluido') {
-          return this.toast('Este chamado já foi assumido por outra oficina.', 'error');
-        }
-        const at = DB.createAtendimento(chamadoId, session.id);
-        DB.addNotif(chamado.motorista_id, 'Oficina aceitou seu chamado! ✅', 'Uma oficina está pronta para te atender e abriu o chat.');
-        this.toast('Chamado aceito! Iniciando chat...', 'success');
-        setTimeout(() => this.navigate('chat-oficina', at.id), 800);
-      };
-    });
-    document.querySelectorAll('[data-action="ver-chat"]').forEach(btn => {
-      btn.onclick = () => this.navigate('chat-oficina', btn.dataset.atendimento);
-    });
-    document.querySelectorAll('[data-action="saber-mais"]').forEach(btn => {
-      btn.onclick = () => {
-        const diag = decodeURIComponent(btn.dataset.diag);
-        alert("Diagnóstico Completo:\n\n" + diag);
-      };
-    });
-  },
-
   // ---- BIND: PROCEDIMENTO ----
   bindProcedimento(atendimentoId) {
     document.getElementById('btn-back-proc').onclick = () => this.navigate('chat-oficina', atendimentoId);
 
-    document.getElementById('btn-add-proc').onclick = () => {
+    const add = document.getElementById('btn-add-proc');
+    const close = document.getElementById('btn-concluir-atendimento');
+    add.onclick = async () => {
       const desc = document.getElementById('proc-desc').value.trim();
-      const custo = document.getElementById('proc-custo').value.trim();
-      if (!desc || !custo) return this.toast('Preencha descrição e custo.', 'error');
-      DB.saveProcedimento(atendimentoId, desc, parseFloat(custo).toFixed(2));
-      document.getElementById('proc-desc').value = '';
-      document.getElementById('proc-custo').value = '';
-      const procs = DB.getProcedimentosByAtendimento(atendimentoId);
-      document.getElementById('procs-list').innerHTML = procs.map(p => `
-        <div class="card card-sm" style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:14px">${p.descricao}</span>
-          <span style="font-weight:700;color:#007AFF">R$ ${p.custo}</span>
-        </div>`).join('');
-      this.toast('Procedimento adicionado!', 'success');
+      const costInput = document.getElementById('proc-custo');
+      if (!desc || !costInput.value || !costInput.checkValidity()) return this.toast('Informe uma descrição e um valor válido.', 'error');
+      add.disabled = true;
+      try {
+        const saved = await this.withLocalWrite(() => {
+          if (DB.getAtendimentoById(atendimentoId)?.status !== 'aceito') return false;
+          DB.saveProcedimento(atendimentoId, desc, costInput.valueAsNumber.toFixed(2));
+          return true;
+        });
+        if (!add.isConnected) return;
+        if (!saved) return this.navigate('chat-oficina', atendimentoId);
+        document.getElementById('proc-desc').value = '';
+        costInput.value = '';
+        document.getElementById('procs-list').innerHTML = Screens.procedures(DB.getProcedimentosByAtendimento(atendimentoId));
+        this.toast('Serviço registrado.', 'success');
+      } catch {
+        this.toast('Não foi possível salvar o serviço.', 'error');
+      } finally {
+        add.disabled = false;
+      }
     };
 
-    document.getElementById('btn-concluir-atendimento').onclick = () => {
-      const session = DB.getSession();
-      DB.solicitarConclusao(atendimentoId);
-      const at = DB.getAtendimentoById(atendimentoId);
-      if (at) {
-        const chamado = DB.getChamadoById(at.chamado_id);
-        if (chamado) DB.addNotif(chamado.motorista_id, 'Conclusão solicitada 🏁', 'A oficina enviou os procedimentos. Conclua o atendimento e deixe sua avaliação.');
+    close.onclick = async () => {
+      close.disabled = true;
+      try {
+        const updated = await this.withLocalWrite(() => {
+          if (!DB.solicitarConclusao(atendimentoId)) return false;
+          const at = DB.getAtendimentoById(atendimentoId);
+          const chamado = DB.getChamadoById(at.chamado_id);
+          DB.addNotif(chamado.motorista_id, 'A oficina solicitou a conclusão', 'Confira os serviços e confirme a conclusão na conversa.', { screen: 'chat-oficina', id: at.id });
+          return true;
+        });
+        if (!close.isConnected) return;
+        if (updated) this.toast('Pedido de conclusão enviado.', 'success');
+        this.navigate('chat-oficina', atendimentoId);
+      } catch {
+        this.toast('Não foi possível atualizar o atendimento.', 'error');
+      } finally {
+        close.disabled = false;
       }
-      this.toast('Conclusão solicitada ao motorista!', 'success');
-      setTimeout(() => this.navigate('dashboard'), 1000);
     };
   },
 
   // ---- BIND: PERFIL ----
   bindPerfil() {
     const btnLogout = document.getElementById('btn-logout');
-    if (btnLogout) btnLogout.onclick = () => { DB.clearSession(); this.navigate('login'); };
-
-    const btnAddVec = document.getElementById('btn-add-veiculo-perfil');
-    if (btnAddVec) btnAddVec.onclick = () => this.navigate('veiculo-form');
+    if (btnLogout) btnLogout.onclick = () => { DB.clearSession(); this.history = []; this.currentScreen = null; this.navigate('login'); };
 
     const btnFoto = document.getElementById('btn-change-foto');
     const inputFoto = document.getElementById('input-change-foto');
     if (btnFoto && inputFoto) {
       btnFoto.onclick = () => inputFoto.click();
-      inputFoto.onchange = (e) => {
+      inputFoto.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
+        try {
+          const photo = await this.readPhoto(file);
+          if (!inputFoto.isConnected) return;
           const session = DB.getSession();
-          DB.updateProfileFoto(session.id, session.user_type, ev.target.result);
+          DB.updateProfileFoto(session.id, session.user_type, photo);
           this.toast('Foto de perfil atualizada!', 'success');
           this.render(Screens.perfil());
           this.bindPerfil();
-        };
-        reader.readAsDataURL(file);
+        } catch (error) {
+          this.toast(error.message, 'error');
+        }
       };
     }
   },
@@ -703,17 +447,43 @@ const App = {
     const notas = { transparencia: 0, prazo: 0, qualidade: 0, organizacao: 0 };
     document.querySelectorAll('.star-rating').forEach(el => {
       const crit = el.dataset.criteria;
-      const stars = el.querySelectorAll('span');
+      const stars = el.querySelectorAll('button');
       stars.forEach(s => {
         s.onclick = () => {
           const val = parseInt(s.dataset.val);
           notas[crit] = val;
-          stars.forEach(st => st.style.color = parseInt(st.dataset.val) <= val ? '#FF9500' : '#E0E0E0');
+          stars.forEach(st => {
+            st.classList.toggle('active', Number(st.dataset.val) <= val);
+            st.setAttribute('aria-pressed', String(st === s));
+          });
         };
       });
     });
 
-    document.getElementById('btn-enviar-avaliacao').onclick = () => {
+    const submit = document.getElementById('btn-enviar-avaliacao');
+    const skip = document.getElementById('btn-pular-avaliacao');
+    const finish = async (avaliar, comentario = '') => {
+      submit.disabled = skip.disabled = true;
+      try {
+        const updated = await this.withLocalWrite(() => {
+          const at = DB.getAtendimentoById(atendimentoId);
+          if (at?.status !== 'aguardando_conclusao') return false;
+          const chamado = DB.getChamadoById(at.chamado_id);
+          if (avaliar) DB.saveAvaliacao(atendimentoId, at.oficina_id, chamado.motorista_id, notas, comentario);
+          DB.concludeAtendimento(atendimentoId);
+          DB.addNotif(at.oficina_id, 'Atendimento concluído', 'O motorista confirmou a conclusão.', { screen: 'chat-oficina', id: at.id });
+          return true;
+        });
+        if (!submit.isConnected) return;
+        if (updated) this.toast(avaliar ? 'Atendimento concluído e avaliação salva.' : 'Atendimento concluído.', 'success');
+        this.navigate('aguardando', DB.getAtendimentoById(atendimentoId).chamado_id);
+      } catch {
+        this.toast('Não foi possível concluir o atendimento.', 'error');
+      } finally {
+        submit.disabled = skip.disabled = false;
+      }
+    };
+    submit.onclick = () => {
       const comentario = document.getElementById('aval-comentario').value.trim();
       if (notas.transparencia === 0 || notas.prazo === 0 || notas.qualidade === 0 || notas.organizacao === 0) {
         return this.toast('Por favor, dê uma nota em todos os critérios.', 'error');
@@ -721,19 +491,10 @@ const App = {
       if (!comentario) {
         return this.toast('Por favor, escreva um comentário sobre o atendimento.', 'error');
       }
-      DB.concludeAtendimento(atendimentoId);
-      const at = DB.getAtendimentoById(atendimentoId);
-      const chamado = DB.getChamadoById(at.chamado_id);
-      DB.saveAvaliacao(atendimentoId, at.oficina_id, chamado.motorista_id, notas, comentario);
-      this.toast('Atendimento concluído e avaliação salva!', 'success');
-      this.navigate('home');
+      finish(true, comentario);
     };
 
-    document.getElementById('btn-pular-avaliacao').onclick = () => {
-      DB.concludeAtendimento(atendimentoId);
-      this.toast('Atendimento concluído sem avaliação.', 'info');
-      this.navigate('home');
-    };
+    skip.onclick = () => finish(false);
   },
 
   // ---- BIND: PERFIL OFICINA PUBLICO (RESPONDER/REVISAR) ----
