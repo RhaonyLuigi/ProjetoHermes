@@ -210,6 +210,41 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 .oferta-header h3 { font-size: 15px; }
 .oferta-sobre { color: var(--muted); font-size: 13px; line-height: 1.55; }
 .oferta-actions { justify-content: space-between; gap: 6px; margin-top: auto; }
+.oferta-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vagas-resumo { display: grid; gap: 5px; padding: 12px; border-radius: 8px; background: #edf2f7; font-size: 13px; }
+.vagas-resumo progress { width: 100%; accent-color: var(--primary); }
+.vagas-resumo span { font-size: 12px; color: var(--muted); }
+.limite-grid { margin-bottom: 12px; }
+.limite-grid .icon-tile { font-weight: 800; }
+.limite-grid strong { flex: 1; font-size: 13px; }
+.plan-link { white-space: nowrap; }
+.plano-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 14px; }
+.plano-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: clamp(18px, 3vw, 32px); border: 1px solid var(--line); border-radius: 15px; background: white; box-shadow: var(--shadow); }
+.plano-card h2 { font-size: 27px; letter-spacing: -.045em; }
+.plano-card p { font-size: 14px; line-height: 1.5; color: var(--muted); }
+.plano-destaque { color: white; border-color: #30475e; background: linear-gradient(125deg, #14243a, #20394f); }
+.plano-destaque p { color: #d1deeb; }
+.plano-destaque .eyebrow { color: var(--accent); }
+.plano-beneficios { display: grid; gap: 10px; margin: 8px 0 auto; padding-bottom: 13px; list-style: none; }
+.plano-beneficios li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.5; }
+.plano-beneficios svg { flex-shrink: 0; }
+.plano-destaque .plano-beneficios svg { color: var(--accent); }
+.plano-nota { margin-top: 16px; }
+.anuncio-demo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; margin-bottom: 19px; border: 1px solid var(--line); border-radius: 12px; background: #f9fbfd; }
+.anuncio-demo strong { display: block; font-size: 13px; margin-top: 4px; }
+.anuncio-demo .text-button { margin-left: auto; }
+.favoritas-panel { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.favoritas-panel h3 { font-size: 14px; margin-bottom: 4px; }
+.favoritas-panel button { display: flex; }
+.pro-painel { margin-bottom: 24px; }
+.pro-metricas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 9px; }
+.pro-metricas > div { min-width: 0; padding: 10px; border-radius: 8px; background: #edf2f7; }
+.pro-metricas strong, .pro-metricas span { display: block; overflow-wrap: anywhere; }
+.pro-metricas strong { font-size: 17px; margin-bottom: 4px; }
+.pro-metricas span { color: var(--muted); font-size: 11px; }
+.respostas-rapidas { margin-bottom: 8px; }
+.respostas-rapidas summary { color: var(--primary); font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px; }
+.respostas-rapidas .queue-filters { margin-top: 5px; }
 .cost-list > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; border-bottom: 1px solid var(--line); padding: 8px 0; }
 .cost-list dd { font-weight: 700; white-space: nowrap; }
 .cost-list dt { overflow-wrap: anywhere; }
@@ -299,6 +334,7 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 }
 
 @media (max-width: 420px) {
+  .pro-metricas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .demo-tag { display: none; }
   .service-hero { padding: 17px; }
   .service-copy h2 { font-size: 26px; }

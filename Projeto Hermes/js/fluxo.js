@@ -7,7 +7,9 @@ Object.assign(App, {
       DB.clearDraft(session.id);
       draft = null;
     }
-    this.render(Screens.chatIA(draft, veiculos));
+    const limites = DB.limitesMotorista(session.id);
+    const limiteValido = limites.includes(draft?.limiteOficinas);
+    this.render(Screens.chatIA(draft, veiculos, limites));
     const update = (changes) => {
       DB.saveDraft(session.id, { ...draft, ...changes });
       this.bindChatIA();
@@ -16,7 +18,10 @@ Object.assign(App, {
       heading.focus();
     };
     document.querySelectorAll('[data-veiculo]').forEach(btn => {
-      btn.onclick = () => update({ id: DB._id(), veiculoId: btn.dataset.veiculo, categoria: '', etapa: 1, indice: 0, respostas: [], resumoIA: '' });
+      btn.onclick = () => update({ id: DB._id(), veiculoId: btn.dataset.veiculo, limiteOficinas: null, categoria: '', etapa: 1, indice: 0, respostas: [], resumoIA: '' });
+    });
+    document.querySelectorAll('[data-limite-oficinas]').forEach(btn => {
+      btn.onclick = () => update({ limiteOficinas: Number(btn.dataset.limiteOficinas) });
     });
     document.querySelectorAll('[data-categoria]').forEach(btn => {
       btn.onclick = () => {
@@ -51,9 +56,11 @@ Object.assign(App, {
     }
     const back = document.getElementById('btn-voltar-triagem');
     if (back) back.onclick = () => {
-      if (draft.etapa === 1) {
+      if (!limiteValido) {
         DB.clearDraft(session.id);
         this.bindChatIA();
+      } else if (draft.etapa === 1) {
+        update({ limiteOficinas: null });
       } else if (draft.indice === 0) {
         update({ etapa: 1 });
       } else {
@@ -68,6 +75,8 @@ Object.assign(App, {
     };
     const edit = document.getElementById('btn-editar-triagem');
     if (edit) edit.onclick = () => update({ etapa: 2, indice: 0 });
+    const editLimit = document.getElementById('btn-editar-limite');
+    if (editLimit) editLimit.onclick = () => update({ limiteOficinas: null });
     const send = document.getElementById('btn-enviar-chamado');
     if (!send) return;
     send.onclick = async () => {
@@ -85,7 +94,7 @@ Object.assign(App, {
           return publicado;
         });
         if (!chamado) {
-          this.toast('O rascunho mudou em outra aba. Confira a versão atual.', 'info');
+          this.toast('Confira o rascunho e o limite disponível no seu plano.', 'info');
           if (send.isConnected) this.bindChatIA();
           return;
         }
@@ -146,6 +155,11 @@ Object.assign(App, {
   },
 
   bindAceitar() {
+    const prioridade = document.getElementById('acesso-prioritario');
+    if (prioridade) {
+      const id = this.currentParam;
+      this.priorityTimer = setTimeout(() => this.navigate('detalhe-oficina', id), Math.max(0, Number(prioridade.dataset.ate) - Date.now()) + 100);
+    }
     const btn = document.querySelector('[data-action="aceitar"]');
     if (!btn) return;
     const session = DB.getSession();
@@ -153,52 +167,73 @@ Object.assign(App, {
       btn.disabled = true;
       try {
         const chamadoId = btn.dataset.chamado;
-        const proposta = await this.withLocalWrite(() => {
+        const atendimento = await this.withLocalWrite(() => {
           const chamado = DB.getChamadoById(chamadoId);
-          const interesse = DB.registrarInteresse(chamadoId, session.id);
-          if (interesse) DB.addNotif(chamado.motorista_id, 'Uma oficina se ofereceu para atender', 'Veja o perfil da oficina e compare as opções do chamado.', { screen: 'aguardando', id: chamadoId });
-          return interesse;
+          const at = DB.aceitarChamado(chamadoId, session.id);
+          if (at) DB.addNotif(chamado.motorista_id, 'Uma oficina aceitou seu chamado', 'Uma nova conversa está disponível.', { screen: 'chat-oficina', id: at.id });
+          return at;
         });
         if (this.currentScreen !== 'detalhe-oficina' || this.currentParam !== chamadoId || DB.getSession()?.id !== session.id) return;
-        if (proposta) this.toast('Interesse enviado ao motorista.', 'success');
-        this.navigate('detalhe-oficina', chamadoId);
+        if (atendimento) {
+          this.toast('Chamado aceito. A conversa está disponível.', 'success');
+          this.navigate('chat-oficina', atendimento.id);
+        } else {
+          this.toast('A disponibilidade do chamado mudou.', 'info');
+          this.navigate('detalhe-oficina', chamadoId);
+        }
       } catch {
         btn.disabled = false;
-        this.toast('Não foi possível enviar o interesse neste navegador.', 'error');
+        this.toast('Não foi possível aceitar o chamado neste navegador.', 'error');
       }
     };
   },
 
-  bindEscolherOficina(chamadoId) {
+  bindAcompanhamento(chamadoId) {
     const session = DB.getSession();
-    const opcoes = [...document.querySelectorAll('[data-escolher-oficina]')];
-    opcoes.forEach(btn => {
+    document.querySelectorAll('[data-oficina-favorita]').forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.dataset.oficinaFavorita;
+        DB.toggleFavorita(session.id, id);
+        const salva = DB.getFavoritas(session.id).includes(id);
+        btn.setAttribute('aria-pressed', String(salva));
+        btn.textContent = salva ? '★ Favorita' : '☆ Favoritar';
+      };
+    });
+    const btn = document.getElementById('fechar-aceites');
+    if (btn) {
       btn.onclick = async () => {
-        opcoes.forEach(opcao => { opcao.disabled = true; });
+        if (!confirm('Fechar as vagas deste chamado? As conversas abertas continuam disponíveis.')) return;
+        btn.disabled = true;
         try {
-          const escolha = await this.withLocalWrite(() => {
-            const resultado = DB.escolherOficina(chamadoId, btn.dataset.escolherOficina, session.id);
-            if (!resultado) return null;
-            const { atendimento, outras } = resultado;
-            DB.addNotif(atendimento.oficina_id, 'O motorista escolheu sua oficina', 'Abra a conversa para combinar o atendimento.', { screen: 'chat-oficina', id: atendimento.id });
-            outras.forEach(proposta => {
-              DB.addNotif(proposta.oficina_id, 'O motorista escolheu outra oficina', 'Você pode consultar o chamado em Interesses.', { screen: 'detalhe-oficina', id: chamadoId });
-            });
-            return atendimento;
-          });
+          const fechado = await this.withLocalWrite(() => DB.fecharAceites(chamadoId, session.id));
           if (this.currentScreen !== 'aguardando' || this.currentParam !== chamadoId || DB.getSession()?.id !== session.id) return;
-          if (escolha) {
-            this.toast('Oficina escolhida. A conversa está disponível.', 'success');
-            this.navigate('chat-oficina', escolha.id);
-          } else {
-            this.toast('As opções do chamado foram atualizadas.', 'info');
-            this.navigate('aguardando', chamadoId);
-          }
+          if (fechado) this.toast('Vagas fechadas. Suas conversas continuam disponíveis.', 'success');
+          this.navigate('aguardando', chamadoId);
         } catch {
-          this.toast('Não foi possível salvar a escolha neste navegador.', 'error');
+          this.toast('Não foi possível fechar as vagas neste navegador.', 'error');
         } finally {
-          opcoes.forEach(opcao => { opcao.disabled = false; });
+          btn.disabled = false;
         }
+      };
+    }
+  },
+
+  bindPlano(session) {
+    const btn = document.getElementById('alternar-plano');
+    btn.onclick = () => {
+      const ativar = !DB.isAssinante(session.id);
+      DB.setAssinante(session.id, ativar);
+      this.navigate('planos');
+      this.toast(ativar ? 'Plano de demonstração ativado.' : 'Plano gratuito selecionado.', 'success');
+    };
+  },
+
+  bindPainelPro() {
+    const controls = [...document.querySelectorAll('[data-periodo-painel]')];
+    controls.forEach(btn => {
+      btn.onclick = () => {
+        controls.forEach(item => item.setAttribute('aria-pressed', String(item === btn)));
+        document.getElementById('painel-pro-metricas').innerHTML = Screens.metricasPro(DB.getSession().id, Number(btn.dataset.periodoPainel));
       };
     });
   },
@@ -229,6 +264,10 @@ Object.assign(App, {
   syncStorage(event) {
     if (!event.key?.startsWith('hermes_') || !DB.getSession()) return;
     const { currentScreen, currentParam } = this;
+    if (event.key.startsWith('hermes_plano_') && (currentScreen === 'detalhe-oficina' ||
+        event.key === 'hermes_plano_' + DB.getSession().id && ['home', 'dashboard', 'planos', 'chat-ia', 'aguardando'].includes(currentScreen))) {
+      this.navigate(currentScreen, currentParam);
+    }
     if (event.key === 'hermes_notifs') this.refreshUnread();
     if (currentScreen === 'chat-oficina' && ['hermes_mensagens', 'hermes_atendimentos', 'hermes_procedimentos'].includes(event.key)) {
       this.refreshConversation(currentParam);
@@ -272,6 +311,15 @@ Object.assign(App, {
     const msgs = document.getElementById('chat-oficina-messages');
     const form = document.getElementById('composer');
     const input = document.getElementById('chat-oficina-input');
+    document.querySelectorAll('[data-resposta-rapida]').forEach(btn => {
+      btn.onclick = () => {
+        if (!DB.isAssinante(session.id)) return;
+        const resposta = btn.dataset.respostaRapida;
+        if (input.value.length + resposta.length + 1 > input.maxLength) return;
+        input.value += (input.value ? '\n' : '') + resposta;
+        input.focus();
+      };
+    });
     const file = document.getElementById('chat-foto-input');
     const preview = document.getElementById('chat-foto-preview');
     const attachment = document.getElementById('chat-attachment');

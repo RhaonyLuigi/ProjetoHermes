@@ -94,6 +94,6 @@ Screens.perfil = () => {
     ${isOficina ? `<button class="btn btn-secondary" onclick="App.navigate('perfil-oficina', '${session.id}')" style="margin-top:12px;font-size:14px;background:#F0F0F0;color:#007AFF">⭐ Ver Minhas Avaliações</button>` : ''}
   </div>
   ${isOficina ? '' : '<button class="btn btn-secondary" onclick="App.navigate(\'veiculos\')">Minha garagem</button>'}
-  <button class="btn btn-danger" id="btn-logout" style="margin-top:16px">Sair da conta</button>
+  <div class="row-actions" style="margin-top:16px">${Screens.atalhoPlano(session)}<button class="btn btn-danger btn-sm" id="btn-logout">Sair da conta</button></div>
 </div>`;
 };

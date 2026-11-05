@@ -39,10 +39,25 @@ const DB = {
   demoPerfis: {
     motorista: { email: 'demo_mot@hermes.com', tipo: 'motorista', nome: 'Motorista' },
     oficina: { email: 'demo_ofi@hermes.com', tipo: 'oficina', nome: 'Oficina Avenida' },
-    central: { email: 'demo_central@hermes.com', tipo: 'oficina', nome: 'Oficina Central' }
+    central: { email: 'demo_central@hermes.com', tipo: 'oficina', nome: 'Oficina Central' },
+    horizonte: { email: 'demo_horizonte@hermes.com', tipo: 'oficina', nome: 'Oficina Horizonte' }
   },
   isDemo(user) {
     return Object.values(this.demoPerfis).some(perfil => user?.email === perfil.email && user.user_type === perfil.tipo);
+  },
+
+  isAssinante(userId) { return localStorage.getItem('hermes_plano_' + userId) === 'ativo'; },
+  setAssinante(userId, ativo) {
+    if (ativo) localStorage.setItem('hermes_plano_' + userId, 'ativo');
+    else localStorage.removeItem('hermes_plano_' + userId);
+  },
+  limitesMotorista(userId) { return this.isAssinante(userId) ? [3, 5, 10, 20] : [3, 4, 5]; },
+  getFavoritas(userId) { return this._get('favoritas_' + userId); },
+  toggleFavorita(userId, oficinaId) {
+    if (!this.isAssinante(userId) || !this.getOficinaProfile(oficinaId)) return;
+    const favoritas = this.getFavoritas(userId);
+    this._set('favoritas_' + userId, favoritas.includes(oficinaId)
+      ? favoritas.filter(id => id !== oficinaId) : [...favoritas, oficinaId]);
   },
 
   // ---- USERS ----
@@ -141,7 +156,7 @@ const DB = {
 
   publicarChamado(userId, draft, resumo, perguntas) {
     const veiculo = this.getVeiculoById(draft.veiculoId);
-    if (veiculo?.motorista_id !== userId) return null;
+    if (veiculo?.motorista_id !== userId || !this.limitesMotorista(userId).includes(draft.limiteOficinas)) return null;
     const chamados = this._get('chamados');
     const existing = chamados.find(c => c.id === draft.id && c.motorista_id === userId);
     if (existing) return existing;
@@ -150,7 +165,7 @@ const DB = {
       id: draft.id, motorista_id: userId, veiculo_id: draft.veiculoId,
       categoria: draft.categoria, resumo_triagem: resumo, resumo_ia: draft.resumoIA || '',
       diagnostico_ia: [resumo.relato, resumo.inspecao, draft.resumoIA].filter(Boolean).join('\n\n'),
-      perguntas, status: 'aguardando', created_at: now, enviado_em: now
+      perguntas, limite_oficinas: draft.limiteOficinas, status: 'aguardando', created_at: now, enviado_em: now
     };
     chamados.push(chamado);
     this._set('chamados', chamados);
@@ -158,25 +173,39 @@ const DB = {
   },
 
   // ---- CHAMADOS ----
-  comStatusAtual(chamado, atendimento) {
-    if (!chamado || !atendimento) return chamado;
-    return { ...chamado, status: atendimento.status === 'concluido' ? 'concluido' : 'em_atendimento' };
+  comStatusAtual(chamado, atendimentos) {
+    const quantidade = atendimentos.length;
+    const limite = chamado.limite_oficinas ?? Math.max(3, quantidade);
+    let status = chamado.status;
+    if (quantidade) status = atendimentos.every(at => at.status === 'concluido') ? 'concluido' : 'em_atendimento';
+    else if (chamado.aceites_encerrados) status = 'encerrado';
+    const vagas = Math.max(0, limite - quantidade);
+    const recebe = ['aguardando', 'em_atendimento'].includes(status) && !chamado.aceites_encerrados && vagas > 0;
+    return { ...chamado, status, limite_oficinas: limite, total_oficinas: quantidade, vagas_restantes: vagas, recebe_oficinas: recebe };
   },
   getChamadoById(id) {
     const chamado = this._get('chamados').find(c => c.id === id) || null;
-    return chamado ? this.comStatusAtual(chamado, this.getAtendimentoByChamado(id)) : null;
+    return chamado ? this.comStatusAtual(chamado, this.getConversasByChamado(id)) : null;
   },
   getChamadosAbertos(oficinaId) {
-    const indisponiveis = new Set(this._get('atendimentos')
-      .filter(a => this.atendimentoConfirmado(a) || a.status === 'proposta' && a.oficina_id === oficinaId)
-      .map(a => a.chamado_id));
-    return this._get('chamados').filter(c => c.status === 'aguardando' && !indisponiveis.has(c.id))
+    const atendimentos = this._get('atendimentos');
+    const jaParticipa = new Set(atendimentos.filter(a => a.oficina_id === oficinaId && a.status !== 'recusado').map(a => a.chamado_id));
+    return this._get('chamados').map(c => this.comStatusAtual(c, atendimentos.filter(a => a.chamado_id === c.id && this.atendimentoConfirmado(a))))
+      .filter(c => c.recebe_oficinas && !jaParticipa.has(c.id))
       .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
   },
   getChamadosByMotorista(motoristaId) {
-    const atendimentos = new Map(this._get('atendimentos').filter(a => this.atendimentoConfirmado(a)).map(a => [a.chamado_id, a]));
+    const atendimentos = this._get('atendimentos').filter(a => this.atendimentoConfirmado(a));
     return this._get('chamados').filter(c => c.motorista_id === motoristaId)
-      .map(c => this.comStatusAtual(c, atendimentos.get(c.id))).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+      .map(c => this.comStatusAtual(c, atendimentos.filter(a => a.chamado_id === c.id))).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+  fecharAceites(chamadoId, motoristaId) {
+    const chamados = this._get('chamados');
+    const chamado = chamados.find(c => c.id === chamadoId && c.motorista_id === motoristaId);
+    if (!chamado || !this.comStatusAtual(chamado, this.getConversasByChamado(chamadoId)).recebe_oficinas) return false;
+    chamado.aceites_encerrados = true;
+    this._set('chamados', chamados);
+    return true;
   },
 
   // ---- DIAGNOSTICO PERGUNTAS ----
@@ -190,39 +219,38 @@ const DB = {
   atendimentoConfirmado(atendimento) {
     return ['aceito', 'aguardando_conclusao', 'concluido'].includes(atendimento?.status);
   },
-  registrarInteresse(chamadoId, oficinaId) {
-    const chamado = this.getChamadoById(chamadoId);
-    if (chamado?.status !== 'aguardando' || !this.getOficinaProfile(oficinaId)) return null;
-    const atendimentos = this._get('atendimentos');
-    if (atendimentos.some(a => a.chamado_id === chamadoId && a.oficina_id === oficinaId && a.status === 'proposta')) return null;
-    const proposta = { id: this._id(), chamado_id: chamadoId, oficina_id: oficinaId, status: 'proposta', proposto_em: this._now() };
-    atendimentos.push(proposta);
-    this._set('atendimentos', atendimentos);
-    return proposta;
+  prioridadeAte(chamado, oficinaId) {
+    const fim = Date.parse(chamado.enviado_em || chamado.created_at) + 120000;
+    if (!chamado.recebe_oficinas || !(fim > Date.now()) || this.isAssinante(oficinaId)) return null;
+    const participantes = new Set(this.getConversasByChamado(chamado.id).map(a => a.oficina_id));
+    return this.getAllOficinas().some(of => !participantes.has(of.user_id) && this.isAssinante(of.user_id)) ? fim : null;
   },
-  getPropostasByChamado(chamadoId) {
-    return this._get('atendimentos').filter(a => a.chamado_id === chamadoId && a.status === 'proposta');
+  aceitarChamado(chamadoId, oficinaId) {
+    const chamado = this.getChamadoById(chamadoId);
+    if (!chamado?.recebe_oficinas || !this.getOficinaProfile(oficinaId) || this.prioridadeAte(chamado, oficinaId)) return null;
+    const atendimentos = this._get('atendimentos');
+    if (atendimentos.some(a => a.chamado_id === chamadoId && a.oficina_id === oficinaId && a.status !== 'recusado')) return null;
+    const atendimento = { id: this._id(), chamado_id: chamadoId, oficina_id: oficinaId, status: 'aceito', iniciado_em: this._now(), concluido_em: null };
+    atendimentos.push(atendimento);
+    this._set('atendimentos', atendimentos);
+    return atendimento;
+  },
+  getConversasByChamado(chamadoId) {
+    return this._get('atendimentos').filter(a => a.chamado_id === chamadoId && this.atendimentoConfirmado(a));
   },
   getParticipacaoOficina(chamadoId, oficinaId) {
     return this._get('atendimentos').find(a => a.chamado_id === chamadoId && a.oficina_id === oficinaId && a.status !== 'recusado') || null;
   },
-  escolherOficina(chamadoId, propostaId, motoristaId) {
-    const chamado = this.getChamadoById(chamadoId);
-    if (chamado?.motorista_id !== motoristaId || chamado.status !== 'aguardando') return null;
+  migrarInteresses() {
     const atendimentos = this._get('atendimentos');
-    const propostas = atendimentos.filter(a => a.chamado_id === chamadoId && a.status === 'proposta');
-    const escolhida = propostas.find(a => a.id === propostaId);
-    if (!escolhida) return null;
-    const outras = propostas.filter(a => a !== escolhida);
-    escolhida.status = 'aceito';
-    escolhida.iniciado_em = this._now();
-    escolhida.concluido_em = null;
-    outras.forEach(a => { a.status = 'nao_selecionado'; });
+    const propostas = atendimentos.filter(a => a.status === 'proposta');
+    if (!propostas.length) return;
+    const abertos = new Set(this._get('chamados').filter(c => c.status === 'aguardando').map(c => c.id));
+    propostas.forEach(a => {
+      a.status = abertos.has(a.chamado_id) ? 'aceito' : 'nao_selecionado';
+      a.iniciado_em = a.proposto_em || this._now();
+    });
     this._set('atendimentos', atendimentos);
-    return { atendimento: escolhida, outras };
-  },
-  getAtendimentoByChamado(chamadoId) {
-    return this._get('atendimentos').find(a => a.chamado_id === chamadoId && this.atendimentoConfirmado(a)) || null;
   },
   getAtendimentosByOficina(oficinaId) {
     return this._get('atendimentos').filter(a => a.oficina_id === oficinaId)
@@ -386,12 +414,12 @@ const DB = {
         this.saveVeiculo(user.id, { marca: 'Honda', modelo: 'Civic', ano: '2021', placa: 'ABC-1234', cor: 'Prata' });
         this.saveVeiculo(user.id, { marca: 'Fiat', modelo: 'Toro', ano: '2023', placa: 'XYZ-9876', cor: 'Branca' });
         const v = this.getVeiculosByMotorista(user.id)[0];
-        const draft = { id: this._id(), veiculoId: v.id, categoria: 'freios', respostas: ['Chiado ou rangido', 'Há alguns dias', 'Às vezes', 'O ruído aparece principalmente em baixa velocidade.'] };
+        const draft = { id: this._id(), veiculoId: v.id, limiteOficinas: 3, categoria: 'freios', respostas: ['Chiado ou rangido', 'Há alguns dias', 'Às vezes', 'O ruído aparece principalmente em baixa velocidade.'] };
         this.publicarChamado(user.id, draft, Triagem.resumo(draft), Triagem.perguntas(draft.categoria).map((p, i) => ({ pergunta: p.texto, resposta: draft.respostas[i] })));
       } else {
         const central = type === 'central';
-        const sobre = central ? 'Diagnóstico elétrico, suspensão e revisão de freios.' : 'Mecânica geral e manutenção preventiva.';
-        this.saveOficinaProfile(user.id, { nome_oficina: nome, cnpj: central ? '00.000.000/0002-00' : '00.000.000/0001-00', sobre, foto_url: '' });
+        const sobre = { oficina: 'Mecânica geral e manutenção preventiva.', central: 'Diagnóstico elétrico, suspensão e revisão de freios.', horizonte: 'Revisão, arrefecimento e diagnóstico de motor.' };
+        this.saveOficinaProfile(user.id, { nome_oficina: nome, cnpj: '00.000.000/0000-00', sobre: sobre[type], foto_url: '' });
         // Adiciona uma avaliação fictícia para enriquecer o perfil
         const m = { id: 'mock_mot_1', user_id: 'mock_mot_1', nome: 'Carlos (Cliente Satisfeito)', created_at: this._now() };
         let profs = this._get('motorista_profiles');
@@ -399,7 +427,7 @@ const DB = {
           profs.push(m);
           this._set('motorista_profiles', profs);
         }
-        this.saveAvaliacao(central ? 'mock_at_2' : 'mock_at_1', user.id, m.id,
+        this.saveAvaliacao({ oficina: 'mock_at_1', central: 'mock_at_2', horizonte: 'mock_at_3' }[type], user.id, m.id,
           { transparencia: 5, prazo: central ? 4 : 5, qualidade: central ? 5 : 4, organizacao: 5 },
           central ? 'Explicaram os serviços e os valores com clareza.' : 'Ótimo atendimento! Muito ágeis.');
       }

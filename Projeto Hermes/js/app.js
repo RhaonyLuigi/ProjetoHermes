@@ -6,6 +6,7 @@ const App = {
   currentScreen: null,
   currentParam: null,
   history: [],
+  priorityTimer: null,
 
   // ---- TOAST ----
   toast(msg, type = 'info') {
@@ -55,7 +56,7 @@ const App = {
   },
 
   setActiveNav(screen) {
-    const aliases = { aguardando: 'home', 'chat-oficina': 'chats', 'detalhe-oficina': 'chamados', procedimento: 'chats' };
+    const aliases = { aguardando: 'home', 'chat-oficina': 'chats', 'detalhe-oficina': 'chamados', procedimento: 'chats', planos: 'perfil' };
     const s = screen || aliases[this.currentScreen] || this.currentScreen;
     document.querySelectorAll('.nav-item').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.screen === s);
@@ -93,13 +94,13 @@ const App = {
     const motorista = ['home', 'chat-ia', 'aguardando', 'veiculos', 'veiculo-form', 'avaliar', 'checkin-motorista'];
     const oficina = ['dashboard', 'chamados', 'detalhe-oficina', 'procedimento', 'checkin-oficina'];
     if (motorista.includes(screen) && role !== 'motorista' || oficina.includes(screen) && role !== 'oficina' ||
-        screen.startsWith('admin-') && role !== 'admin' || role === 'admin' && ['chats', 'notificacoes'].includes(screen)) return this.goHome();
+        screen.startsWith('admin-') && role !== 'admin' || role === 'admin' && ['chats', 'notificacoes', 'planos'].includes(screen)) return this.goHome();
 
     if (screen === 'aguardando' || screen === 'detalhe-oficina') {
       const chamado = DB.getChamadoById(param);
       const allowed = chamado && (role === 'motorista'
         ? chamado.motorista_id === session.id && chamado.status !== 'em_diagnostico'
-        : chamado.status === 'aguardando' || DB.getParticipacaoOficina(param, session.id));
+        : chamado.recebe_oficinas || DB.getParticipacaoOficina(param, session.id));
       if (!allowed) return this.goHome();
     }
     if (['chat-oficina', 'procedimento', 'avaliar'].includes(screen)) {
@@ -117,6 +118,7 @@ const App = {
     }
     this.currentScreen = screen;
     this.currentParam = param;
+    clearTimeout(this.priorityTimer);
     switch (screen) {
       case 'login': this.hideNav(); this.render(Screens.login()); this.bindLogin(); break;
       case 'register': this.hideNav(); this.render(Screens.register()); this.bindRegister(); break;
@@ -128,7 +130,7 @@ const App = {
       case 'aguardando':
         this.showNav('motorista');
         this.render(Screens.detalheChamado(DB.getChamadoById(param), false));
-        this.bindEscolherOficina(param);
+        this.bindAcompanhamento(param);
         break;
       case 'detalhe-oficina':
         this.showNav('oficina');
@@ -143,10 +145,11 @@ const App = {
       case 'veiculos': this.showNav('motorista'); this.render(Screens.meusVeiculos()); this.bindMeusVeiculos(); this.setActiveNav('veiculos'); break;
       case 'chats': { const t = session && session.user_type === 'oficina' ? 'oficina' : 'motorista'; this.showNav(t); this.render(Screens.chatsLista()); this.bindChatsLista(); this.setActiveNav('chats'); break; }
       case 'notificacoes': this.showNav(role); this.render(Screens.notificacoes()); DB.markAllRead(session.id); this.refreshUnread(); break;
-      case 'dashboard': this.showNav('oficina'); this.render(Screens.dashboardOficina()); break;
+      case 'dashboard': this.showNav('oficina'); this.render(Screens.dashboardOficina()); this.bindPainelPro(); break;
       case 'chamados': this.showNav('oficina'); this.render(Screens.chamadosOficina()); this.bindChamados(); this.setActiveNav('chamados'); break;
       case 'procedimento': this.showNav('oficina'); this.render(Screens.registrarProcedimento(param)); this.bindProcedimento(param); break;
       case 'perfil': const t = session && session.user_type === 'oficina' ? 'oficina' : (session && session.user_type === 'admin' ? 'admin' : 'motorista'); this.showNav(t); this.render(Screens.perfil()); this.bindPerfil(); this.setActiveNav('perfil'); break;
+      case 'planos': this.showNav(role); this.render(Screens.planos(session)); this.bindPlano(session); break;
       case 'home': this.showNav('motorista'); this.render(Screens.dashboardMotorista()); this.setActiveNav('home'); break;
       case 'avaliar': this.showNav('none'); this.render(Screens.avaliarOficina(param)); this.bindAvaliar(param); break;
       case 'perfil-oficina': this.showNav('none'); this.render(Screens.perfilOficinaPublico(param)); this.bindPerfilOficinaPublico(); document.getElementById('btn-back-perfil-oficina').onclick = () => this.goBack(); break;
@@ -554,4 +557,7 @@ const App = {
 };
 
 // ---- INIT ----
-document.addEventListener('DOMContentLoaded', () => App.boot());
+document.addEventListener('DOMContentLoaded', async () => {
+  try { await App.withLocalWrite(() => DB.migrarInteresses()); }
+  finally { App.boot(); }
+});

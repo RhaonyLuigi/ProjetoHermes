@@ -1,15 +1,23 @@
 # Hermes
 
-Protótipo acadêmico que conecta motoristas e oficinas. O motorista descreve o sintoma, revisa o pré-diagnóstico e envia um chamado. Várias oficinas podem consultar o relato e oferecer atendimento. O motorista compara as opções e escolhe a oficina com quem vai conversar.
+Protótipo acadêmico que conecta motoristas e oficinas. O motorista escolhe o limite de oficinas, descreve o sintoma, revisa o pré-diagnóstico e envia um chamado. Cada oficina que aceita ocupa uma vaga e abre uma conversa separada com o motorista.
 
 ## Experimentar
 
 Abra `index.html` no Chrome ou Edge e escolha **Entrar como motorista**. Para usar um endereço local estável, execute `node server.mjs` na pasta do projeto e abra [Hermes no navegador](http://127.0.0.1:4173). O servidor usa Node.js 20 ou superior e dispensa instalação de dependências.
 
-1. Em **Iniciar triagem**, escolha um veículo e responda às perguntas. Revise o resumo e envie o chamado.
-2. Em **Trocar perfil**, escolha **Oficina Avenida**. Abra o chamado e clique em **Tenho interesse**. Repita como **Oficina Central** para oferecer uma segunda opção ao mesmo motorista.
-3. Volte ao perfil **Motorista**. Abra o chamado, compare as oficinas interessadas e escolha uma para iniciar a conversa.
-4. Como oficina escolhida, abra **Conversas** para responder. Registre os serviços e solicite a conclusão. Como motorista, confira os valores, confirme e, se quiser, avalie. Você pode manter os perfis em abas separadas do mesmo navegador.
+1. Em **Iniciar triagem**, escolha um veículo e o limite de oficinas. Responda às perguntas, revise o resumo e envie o chamado.
+2. Em **Trocar perfil**, entre como **Oficina Avenida** e aceite o chamado. Repita com **Oficina Central** e **Oficina Horizonte** até o limite escolhido.
+3. Volte ao perfil **Motorista**. Abra o chamado para ver as vagas e conversar separadamente com as oficinas. **Fechar vagas** encerra novos aceites e mantém as conversas que já existem.
+4. Como oficina, abra a conversa, registre os serviços e solicite a conclusão. Como motorista, confira os valores e confirme a conclusão desse atendimento. Você pode manter os perfis em abas separadas do mesmo navegador.
+
+## Planos de demonstração
+
+- **Motorista gratuito** permite até 3, 4 ou 5 oficinas por chamado.
+- **Motorista Plus** remove os anúncios de demonstração, permite até 3, 5, 10 ou 20 oficinas, salva favoritas e mostra os valores registrados de cada oficina no acompanhamento.
+- **Oficina Pro** remove os anúncios, oferece respostas rápidas no chat e inclui um painel de desempenho com filtros de 7 e 30 dias. Oficinas Pro têm até 2 minutos de acesso antecipado a chamados novos. As vagas restantes são liberadas antes se todas as assinantes aptas já tiverem aceitado.
+
+Ative ou desative o plano em **Planos**. A simulação fica salva por perfil neste navegador e dispensa pagamento. Chamados enviados mantêm o limite escolhido mesmo após mudar de plano.
 
 ## Complemento com Gemini
 

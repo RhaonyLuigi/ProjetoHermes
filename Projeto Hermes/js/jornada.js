@@ -33,19 +33,19 @@ Screens.brand = () => `<span class="brand"><span class="brand-mark"><svg width="
 Screens.vehicleName = (v) => v ? `${v.marca} ${v.modelo}` : 'Veículo';
 Screens.empty = (icon, title, text, action = '') => `<div class="empty-panel"><span class="icon-tile">${Screens.icon(icon)}</span><strong>${title}</strong><p>${text}</p>${action}</div>`;
 Screens.pageTitle = (label, title, subtitle, action = '') => `<div class="page-heading"><div><p class="eyebrow">${label}</p><h1>${title}</h1><p class="page-subtitle">${subtitle}</p></div>${action}</div>`;
-Screens.status = (chamado, atendimento, propostas = 0) => {
+Screens.status = (chamado, atendimento) => {
   const labels = {
     aguardando: ['Aguardando oficina', 'amber'],
     em_atendimento: ['Em atendimento', 'blue'],
+    aceito: ['Em atendimento', 'blue'],
     proposta: ['Interesse enviado', 'blue'],
     nao_selecionado: ['Outra oficina escolhida', 'muted'],
     aguardando_conclusao: ['Aguardando confirmação', 'amber'],
     concluido: ['Concluído', 'green'],
-    recusado: ['Encerrado', 'muted']
+    recusado: ['Encerrado', 'muted'],
+    encerrado: ['Encerrado', 'muted']
   };
-  const [label, color] = propostas
-    ? [propostas === 1 ? '1 oficina interessada' : `${propostas} oficinas interessadas`, 'blue']
-    : labels[atendimento?.status] || labels[chamado.status] || ['Rascunho', 'muted'];
+  const [label, color] = labels[atendimento?.status] || labels[chamado.status] || ['Rascunho', 'muted'];
   return `<span class="status status-${color}">${label}</span>`;
 };
 
@@ -68,7 +68,7 @@ Screens.login = () => `
         <p class="page-subtitle">Experimente os dois lados do atendimento com dados de demonstração.</p>
         <div class="demo-choices">
           <button class="demo-choice demo-primary" id="btn-demo-mot"><span class="icon-tile">${Screens.icon('car')}</span><span><strong>Entrar como motorista</strong><small>Relate um problema no veículo</small></span>${Screens.icon('arrow')}</button>
-          <button class="demo-choice" id="btn-demo-ofi"><span class="icon-tile">${Screens.icon('wrench')}</span><span><strong>Entrar como oficina</strong><small>Analise chamados e ofereça atendimento</small></span>${Screens.icon('arrow')}</button>
+          <button class="demo-choice" id="btn-demo-ofi"><span class="icon-tile">${Screens.icon('wrench')}</span><span><strong>Entrar como oficina</strong><small>Analise chamados e converse com motoristas</small></span>${Screens.icon('arrow')}</button>
         </div>
         <details class="login-details"><summary>Já tem uma conta local?</summary>
           <form id="login-form">
@@ -86,14 +86,11 @@ Screens.login = () => `
 
 Screens.driverCard = (c) => {
   const v = DB.getVeiculoById(c.veiculo_id);
-  const atendimento = DB.getAtendimentoByChamado(c.id);
-  const oficina = atendimento && DB.getOficinaProfile(atendimento.oficina_id);
   const categoria = Triagem.categorias[c.categoria]?.nome || 'Assistência automotiva';
-  const propostas = c.status === 'aguardando' ? DB.getPropostasByChamado(c.id).length : 0;
   return `<article class="request-row">
     <span class="icon-tile">${Screens.icon('car')}</span>
-    <div class="request-title"><strong>${Screens.escape(Screens.vehicleName(v))}</strong><p>${Screens.escape(oficina?.nome_oficina || categoria)} · ${Screens.formatDate(c.enviado_em || c.created_at)}</p></div>
-    ${Screens.status(c, atendimento, propostas)}
+    <div class="request-title"><strong>${Screens.escape(Screens.vehicleName(v))}</strong><p>${Screens.escape(categoria)} · ${c.total_oficinas} de ${c.limite_oficinas} oficinas</p></div>
+    ${Screens.status(c)}
     <button class="text-button request-link" onclick="App.navigate('aguardando', '${Screens.escape(c.id)}')">Ver chamado ${Screens.icon('arrow', 16)}</button>
   </article>`;
 };
@@ -105,10 +102,10 @@ Screens.dashboardMotorista = () => {
   const veiculos = DB.getVeiculosByMotorista(session.id);
   const chamados = DB.getChamadosByMotorista(session.id);
   const abertos = chamados.filter(c => ['aguardando', 'em_atendimento'].includes(c.status));
-  const historico = chamados.filter(c => ['concluido', 'recusado'].includes(c.status));
+  const historico = chamados.filter(c => ['concluido', 'recusado', 'encerrado'].includes(c.status));
   const draft = DB.getDraft(session.id);
   return `<div class="screen workspace-screen">
-    ${Screens.pageTitle('ÁREA DO MOTORISTA', `Olá, ${Screens.escape(nome)}`, 'Acompanhe seus veículos e atendimentos em um só lugar.')}
+    ${Screens.pageTitle('ÁREA DO MOTORISTA', `Olá, ${Screens.escape(nome)}`, 'Acompanhe seus veículos e atendimentos em um só lugar.', Screens.atalhoPlano(session))}
     <section class="service-hero">
       <img class="service-diagram" src="img/vehicle-diagram.svg" alt="">
       <div class="service-copy">
@@ -118,6 +115,7 @@ Screens.dashboardMotorista = () => {
         <button class="btn btn-accent" onclick="App.navigate('chat-ia')">${Screens.icon(draft ? 'arrow' : 'plus', 18)} ${draft ? 'Retomar triagem' : 'Iniciar triagem'}</button>
       </div>
     </section>
+    ${Screens.anuncio(session)}
     <div class="dashboard-grid">
       <section>
         <div class="section-heading"><div><h2>Meus chamados <span>${abertos.length}</span></h2><p>Acompanhe o andamento de cada solicitação.</p></div></div>
@@ -128,6 +126,7 @@ Screens.dashboardMotorista = () => {
         <div class="section-heading"><div><h2>Minha garagem</h2><p>Seus veículos cadastrados.</p></div><span class="icon-tile">${Screens.icon('car')}</span></div>
         ${veiculos.slice(0, 3).map(v => `<div class="garage-car"><strong>${Screens.escape(Screens.vehicleName(v))}</strong><small>${Screens.escape([v.ano, v.placa].filter(Boolean).join(' · '))}</small></div>`).join('') || '<p class="muted">Nenhum veículo cadastrado.</p>'}
         <button class="text-button" onclick="App.navigate('veiculos')">Ver garagem ${Screens.icon('arrow', 16)}</button>
+        ${Screens.favoritas(session)}
       </aside>
     </div>
   </div>`;
@@ -151,17 +150,22 @@ Screens.meusVeiculos = () => {
   </div>`;
 };
 
-Screens.chatIA = (draft, veiculos) => {
+Screens.chatIA = (draft, veiculos, limites) => {
   const v = veiculos.find(item => item.id === draft?.veiculoId);
   const categoria = v && draft.etapa > 1 && Triagem.categorias[draft.categoria];
-  const etapa = !v ? 0 : !categoria ? 1 : draft.etapa;
-  const pergunta = categoria && etapa === 2 ? Triagem.perguntas(draft.categoria)[draft.indice] : null;
-  const steps = ['Veículo', 'Sintoma', 'Perguntas', 'Revisão'];
+  const limite = v && limites.includes(draft.limiteOficinas) ? draft.limiteOficinas : null;
+  const etapa = !v ? 0 : !limite ? 1 : !categoria ? 2 : draft.etapa + 1;
+  const pergunta = categoria && etapa === 3 ? Triagem.perguntas(draft.categoria)[draft.indice] : null;
+  const steps = ['Veículo', 'Limite', 'Sintoma', 'Perguntas', 'Revisão'];
   let conteudo;
   if (!v) {
     conteudo = `<h2>Qual veículo precisa de atenção?</h2><p>Escolha um veículo da sua garagem para começar.</p>
       <div class="choice-grid">${veiculos.map(item => `<button class="choice-card" data-veiculo="${Screens.escape(item.id)}"><span class="icon-tile">${Screens.icon('car')}</span><span><strong>${Screens.escape(Screens.vehicleName(item))}</strong><small>${Screens.escape([item.ano, item.placa].filter(Boolean).join(' · '))}</small></span>${Screens.icon('arrow', 17)}</button>`).join('')}
       <button class="choice-card choice-outline" onclick="App.navigate('veiculo-form', 'chat-ia')"><span class="icon-tile">${Screens.icon('plus')}</span><span><strong>Cadastrar veículo</strong><small>Adicione à sua garagem</small></span></button></div>`;
+  } else if (!limite) {
+    conteudo = `<h2>Quantas oficinas podem aceitar?</h2><p>Esse é o máximo de oficinas que podem entrar no chamado. Você pode conversar com todas as que aceitarem.</p>
+      <div class="choice-grid limite-grid">${limites.map(numero => `<button class="choice-card" data-limite-oficinas="${numero}"><span class="icon-tile">${numero}</span><strong>Até ${numero} oficinas</strong>${Screens.icon('arrow', 16)}</button>`).join('')}</div>
+      ${Screens.atalhoPlano(DB.getSession())}`;
   } else if (!categoria) {
     conteudo = `<h2>Qual é o principal sintoma?</h2><p>Escolha a opção mais próxima do que você percebeu.</p>
       <div class="choice-grid">${Object.entries(Triagem.categorias).map(([key, grupo]) => `<button class="choice-card" data-categoria="${key}"><span class="icon-tile">${Screens.icon(grupo.icone)}</span><span><strong>${grupo.nome}</strong><small>${grupo.exemplo}</small></span></button>`).join('')}</div>`;
@@ -181,7 +185,7 @@ Screens.chatIA = (draft, veiculos) => {
       ${Screens.resumoTriagem(resumo, draft.resumoIA)}
       <details class="history-panel"><summary>Ver perguntas e respostas</summary>${Screens.respostas(Triagem.perguntas(draft.categoria).map((p, i) => ({ pergunta: p.texto, resposta: draft.respostas[i] })))}</details>
       ${Screens.opcaoGemini(draft)}
-      <div class="row-actions review-actions"><button class="btn btn-secondary btn-sm" id="btn-editar-triagem">Editar respostas</button><button class="btn btn-primary btn-sm" id="btn-enviar-chamado">Enviar chamado ${Screens.icon('arrow', 16)}</button></div>`;
+      <div class="row-actions review-actions"><button class="btn btn-secondary btn-sm" id="btn-editar-triagem">Editar respostas</button><button class="text-button" id="btn-editar-limite">Alterar limite</button><button class="btn btn-primary btn-sm" id="btn-enviar-chamado">Enviar chamado ${Screens.icon('arrow', 16)}</button></div>`;
   }
 
   return `<div class="screen workspace-screen">
@@ -189,11 +193,11 @@ Screens.chatIA = (draft, veiculos) => {
     <ol class="steps" aria-label="Etapas da triagem">${steps.map((label, i) => `<li class="${i === etapa ? 'step-active' : i < etapa ? 'step-done' : ''}" ${i === etapa ? 'aria-current="step"' : ''}><span>${i < etapa ? Screens.icon('check', 14) : i + 1}</span>${label}</li>`).join('')}</ol>
     <div class="triage-grid">
       <section class="flow-panel">
-        ${etapa > 0 && etapa < 3 ? `<button class="text-button flow-back" id="btn-voltar-triagem">${Screens.icon('back', 16)} Voltar</button>` : ''}
+        ${etapa > 0 && etapa < 4 ? `<button class="text-button flow-back" id="btn-voltar-triagem">${Screens.icon('back', 16)} Voltar</button>` : ''}
         ${conteudo}
       </section>
       <aside class="context-panel"><span class="icon-tile">${Screens.icon('spark')}</span><h2>Sua triagem</h2>
-        <dl><dt>Veículo</dt><dd>${v ? Screens.escape(Screens.vehicleName(v)) : 'A selecionar'}</dd><dt>Sintoma</dt><dd>${categoria?.nome || 'A selecionar'}</dd></dl>
+        <dl><dt>Veículo</dt><dd>${v ? Screens.escape(Screens.vehicleName(v)) : 'A selecionar'}</dd><dt>Limite</dt><dd>${limite ? `${limite} oficinas` : 'A selecionar'}</dd><dt>Sintoma</dt><dd>${categoria?.nome || 'A selecionar'}</dd></dl>
         <p>Você pode sair e retomar de onde parou neste navegador.</p>
         ${draft ? '<button class="text-button" id="btn-descartar-triagem">Descartar rascunho</button>' : ''}
       </aside>
@@ -218,57 +222,64 @@ Screens.opcaoGemini = (draft) => document.documentElement.dataset.gemini === 'en
   <p id="gemini-status" role="status"></p>
 </details>` : '';
 
-Screens.oficinasInteressadas = (propostas) => `<section class="flow-panel ofertas-panel" aria-labelledby="ofertas-title">
-  <h2 id="ofertas-title">Oficinas interessadas</h2>
-  <p>Compare os perfis e as avaliações. Ao escolher uma oficina, você abre a conversa com ela e encerra as outras opções.</p>
-  <div class="ofertas-grid">${propostas.map(proposta => {
-    const oficina = DB.getOficinaProfile(proposta.oficina_id);
+Screens.oficinasDoChamado = (chamado, atendimentos, session) => {
+  const assinante = DB.isAssinante(session.id);
+  const favoritas = assinante ? DB.getFavoritas(session.id) : [];
+  return `<section class="flow-panel ofertas-panel" aria-labelledby="ofertas-title">
+  <h2 id="ofertas-title">Conversas deste chamado</h2>
+  <p>Cada oficina tem uma conversa própria. Abra quantas precisar para comparar os atendimentos.</p>
+  <div class="ofertas-grid">${atendimentos.map(atendimento => {
+    const oficinaId = atendimento.oficina_id;
+    const oficina = DB.getOficinaProfile(oficinaId);
     const nome = Screens.escape(oficina?.nome_oficina || 'Oficina');
-    const avaliacoes = DB.getAvaliacoesPublicas(proposta.oficina_id);
+    const avaliacoes = DB.getAvaliacoesPublicas(oficinaId);
     const total = avaliacoes.length;
     const media = total ? (avaliacoes.reduce((soma, item) => soma + item.media, 0) / total)
       .toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '';
+    const procs = assinante ? DB.getProcedimentosByAtendimento(atendimento.id) : [];
+    const favorita = favoritas.includes(oficinaId);
     return `<article class="oferta-card">
       <div class="oferta-header"><span class="icon-tile">${Screens.icon('wrench')}</span><div><h3>${nome}</h3><p class="muted">${total ? `★ ${media} de 5 · ${total} ${total === 1 ? 'avaliação' : 'avaliações'}` : 'Sem avaliações'}</p></div></div>
       <p class="oferta-sobre">${Screens.escape(oficina?.sobre || 'Atendimento automotivo.')}</p>
+      <div class="oferta-meta">${Screens.status(chamado, atendimento)}
+      ${assinante ? `<button class="text-button" data-oficina-favorita="${Screens.escape(oficinaId)}" aria-pressed="${favorita}">${favorita ? '★ Favorita' : '☆ Favoritar'}</button>` : ''}</div>
+      ${procs.length ? `<p class="muted">Serviços registrados <strong>${Screens.money(procs.reduce((soma, p) => soma + (Number(p.custo) || 0), 0))}</strong></p>` : ''}
       <div class="row-actions oferta-actions">
-        <button class="text-button" onclick="App.navigate('perfil-oficina', '${Screens.escape(proposta.oficina_id)}')" aria-label="Ver perfil de ${nome}">Ver perfil</button>
-        <button class="btn btn-primary btn-sm" data-escolher-oficina="${Screens.escape(proposta.id)}" aria-label="Escolher ${nome}">Escolher oficina ${Screens.icon('arrow', 16)}</button>
+        <button class="text-button" onclick="App.navigate('perfil-oficina', '${Screens.escape(oficinaId)}')" aria-label="Ver perfil de ${nome}">Ver perfil</button>
+        <button class="btn btn-primary btn-sm" data-abrir-atendimento="${Screens.escape(atendimento.id)}" onclick="App.navigate('chat-oficina', this.dataset.abrirAtendimento)" aria-label="Abrir conversa com ${nome}">Abrir conversa ${Screens.icon('chat', 16)}</button>
       </div>
     </article>`;
   }).join('')}</div>
 </section>`;
+};
 
 Screens.detalheChamado = (c, isOficina) => {
   const v = DB.getVeiculoById(c.veiculo_id);
-  const selecionado = DB.getAtendimentoByChamado(c.id);
-  const oficinaId = isOficina ? DB.getSession().id : null;
-  const participacao = isOficina ? DB.getParticipacaoOficina(c.id, oficinaId) : null;
-  const at = !isOficina || selecionado?.oficina_id === oficinaId ? selecionado : null;
-  const propostas = !isOficina && c.status === 'aguardando' ? DB.getPropostasByChamado(c.id) : [];
-  const oficina = at && DB.getOficinaProfile(at.oficina_id);
+  const session = DB.getSession();
+  const participacao = isOficina ? DB.getParticipacaoOficina(c.id, session.id) : null;
+  const at = DB.atendimentoConfirmado(participacao) ? participacao : null;
+  const conversas = isOficina ? [] : DB.getConversasByChamado(c.id);
+  const prioridadeAte = isOficina && !participacao ? DB.prioridadeAte(c, session.id) : null;
   const perguntas = DB.getPerguntasByChamado(c.id);
   const procs = at ? DB.getProcedimentosByAtendimento(at.id) : [];
   const done = c.status === 'concluido';
-  const stages = [['Triagem enviada', true], ['Oficina escolhida', Boolean(selecionado) || done], ['Concluído', done]];
-  let proximoPasso = '<p>As oficinas interessadas aparecerão aqui para você escolher.</p>';
+  const stages = [['Triagem enviada', true], ['Conversas abertas', c.total_oficinas > 0 || done], ['Concluído', done]];
+  let proximoPasso = '';
   if (at) {
-    proximoPasso = `<p>${oficina ? Screens.escape(oficina.nome_oficina) : 'Oficina responsável'}</p><button class="btn btn-primary" onclick="App.navigate('chat-oficina', '${Screens.escape(at.id)}')">${Screens.icon('chat', 17)} Abrir conversa</button>`;
-  } else if (participacao?.status === 'proposta') {
-    proximoPasso = '<p>Seu interesse foi enviado. A conversa ficará disponível se o motorista escolher sua oficina.</p>';
+    proximoPasso = `<button class="btn btn-primary" onclick="App.navigate('chat-oficina', '${Screens.escape(at.id)}')">${Screens.icon('chat', 17)} Abrir conversa</button>`;
   } else if (participacao?.status === 'nao_selecionado') {
-    proximoPasso = '<p>O motorista escolheu outra oficina para este chamado.</p>';
-  } else if (isOficina && c.status === 'aguardando') {
-    proximoPasso = `<p>Envie seu interesse para aparecer entre as opções do motorista.</p><button class="btn btn-primary" data-action="aceitar" data-chamado="${Screens.escape(c.id)}">Tenho interesse ${Screens.icon('arrow', 17)}</button>`;
-  } else if (propostas.length) {
-    proximoPasso = '<p>Escolha uma das oficinas interessadas para iniciar a conversa.</p>';
-  } else if (c.status !== 'aguardando') {
-    proximoPasso = '<p>Este chamado está encerrado.</p>';
+    proximoPasso = '<p>Participação encerrada no fluxo anterior do Hermes.</p>';
+  } else if (prioridadeAte) {
+    proximoPasso = `<p id="acesso-prioritario" data-ate="${prioridadeAte}">Acesso antecipado do Oficina Pro. Se houver vagas, o acesso geral será liberado em até 2 minutos.</p>${Screens.atalhoPlano(session)}`;
+  } else if (isOficina && c.recebe_oficinas) {
+    proximoPasso = `<p>Ao aceitar, você ocupa uma vaga e abre uma conversa com o motorista.</p><button class="btn btn-primary" data-action="aceitar" data-chamado="${Screens.escape(c.id)}">Aceitar chamado ${Screens.icon('arrow', 17)}</button>`;
+  } else if (!isOficina && c.recebe_oficinas) {
+    proximoPasso = '<p>Você pode fechar as vagas quando tiver conversas suficientes.</p><button class="btn btn-secondary" id="fechar-aceites">Fechar vagas</button>';
   }
   return `<div class="screen workspace-screen">
     <button class="text-button detail-back" onclick="App.navigate('${isOficina ? 'chamados' : 'home'}')">${Screens.icon('back', 16)} Voltar aos chamados</button>
-    ${Screens.pageTitle('ACOMPANHAMENTO', Screens.escape(Screens.vehicleName(v)), `Chamado aberto em ${Screens.formatDate(c.enviado_em || c.created_at)}`, Screens.status(c, participacao || at, propostas.length))}
-    ${propostas.length ? Screens.oficinasInteressadas(propostas) : ''}
+    ${Screens.pageTitle('ACOMPANHAMENTO', Screens.escape(Screens.vehicleName(v)), `Chamado aberto em ${Screens.formatDate(c.enviado_em || c.created_at)}`, Screens.status(c, participacao))}
+    ${conversas.length ? Screens.oficinasDoChamado(c, conversas, session) : ''}
     <div class="triage-grid">
       <section class="flow-panel detail-panel">
         <h2>Pré-diagnóstico</h2>
@@ -278,6 +289,9 @@ Screens.detalheChamado = (c, isOficina) => {
       </section>
       <aside class="context-panel">
         <h2>Andamento</h2>
+        <div class="vagas-resumo"><strong>${c.total_oficinas} de ${c.limite_oficinas} oficinas</strong>
+          <progress max="${c.limite_oficinas}" value="${c.total_oficinas}" aria-label="Vagas preenchidas"></progress>
+          <span>${c.recebe_oficinas ? `${c.vagas_restantes} ${c.vagas_restantes === 1 ? 'vaga disponível' : 'vagas disponíveis'}` : 'Recebimento encerrado'}</span></div>
         <ol class="timeline">${stages.map(([text, concluida]) => `<li class="${concluida ? 'done' : ''}"><span>${concluida ? Screens.icon('check', 12) : ''}</span>${text}</li>`).join('')}</ol>
         ${proximoPasso}
       </aside>
@@ -299,6 +313,7 @@ Screens.workshopCard = (c, at) => {
     <div class="workshop-card-top"><span class="icon-tile">${Screens.icon('car')}</span>${Screens.status(c, at)}</div>
     <h3>${Screens.escape(Screens.vehicleName(v))}</h3><p class="muted">${Screens.escape(motorista?.nome || 'Motorista')} · ${Screens.escape(categoria)}</p>
     <p class="workshop-excerpt">${Screens.escape(relato.slice(0, 130))}${relato.length > 130 ? '…' : ''}</p>
+    ${!at ? `<p class="muted">${c.vagas_restantes} ${c.vagas_restantes === 1 ? 'vaga disponível' : 'vagas disponíveis'}</p>` : ''}
     <div class="workshop-card-bottom"><small>${Screens.timeSince(c.enviado_em || c.created_at)}</small><button class="text-button" onclick="App.navigate('detalhe-oficina', '${Screens.escape(c.id)}')">Ver chamado ${Screens.icon('arrow', 16)}</button></div>
   </article>`;
 };
@@ -315,9 +330,10 @@ Screens.dashboardOficina = () => {
     ['spark', stats.avaliacao ?? '—', 'Avaliação média']
   ];
   return `<div class="screen workspace-screen">
-    ${Screens.pageTitle('ÁREA DA OFICINA', Screens.escape(profile?.nome_oficina || 'Painel da oficina'), 'Analise os sintomas e organize os atendimentos da sua oficina.')}
+    ${Screens.pageTitle('ÁREA DA OFICINA', Screens.escape(profile?.nome_oficina || 'Painel da oficina'), 'Analise os sintomas e organize os atendimentos da sua oficina.', Screens.atalhoPlano(session))}
     <div class="metrics-strip">${metrics.map(([icon, value, label]) => `<div class="metric-tile"><span class="icon-tile">${Screens.icon(icon)}</span><strong>${value}</strong><span>${label}</span></div>`).join('')}</div>
-    <div class="section-heading"><div><h2>Chamados disponíveis</h2><p>Leia o pré-diagnóstico e envie seu interesse em atender.</p></div><button class="text-button" onclick="App.navigate('chamados')">Ver todos ${Screens.icon('arrow', 16)}</button></div>
+    ${DB.isAssinante(session.id) ? Screens.painelPro(session.id) : Screens.anuncio(session)}
+    <div class="section-heading"><div><h2>Chamados disponíveis</h2><p>Leia o pré-diagnóstico e aceite para abrir uma conversa.</p></div><button class="text-button" onclick="App.navigate('chamados')">Ver todos ${Screens.icon('arrow', 16)}</button></div>
     <div class="workshop-grid">${novos.slice(0, 4).map(c => Screens.workshopCard(c)).join('')}</div>
     ${novos.length ? '' : Screens.empty('list', 'Nenhum chamado disponível', 'Novas solicitações aparecem nesta fila quando os motoristas enviarem uma triagem.') }
   </div>`;
@@ -328,14 +344,14 @@ Screens.queueCards = (oficinaId) => {
   const atendimentos = DB.getAtendimentosByOficina(oficinaId).filter(at => at.status !== 'recusado');
   const cards = [...novos.map(c => [c, null]), ...atendimentos.map(at => [DB.getChamadoById(at.chamado_id), at])].filter(([c]) => c);
   return cards.map(([c, at]) => {
-    const grupos = { proposta: 'interesses', nao_selecionado: 'interesses', concluido: 'concluidos' };
+    const grupos = { nao_selecionado: 'concluidos', concluido: 'concluidos' };
     const grupo = at ? grupos[at.status] || 'ativos' : 'novos';
     return `<div data-grupo="${grupo}">${Screens.workshopCard(c, at)}</div>`;
   }).join('');
 };
 
 Screens.chamadosOficina = () => {
-  const groups = [['novos', 'Disponíveis'], ['interesses', 'Interesses'], ['ativos', 'Em atendimento'], ['concluidos', 'Concluídos']];
+  const groups = [['novos', 'Disponíveis'], ['ativos', 'Em atendimento'], ['concluidos', 'Encerrados']];
   return `<div class="screen workspace-screen">
     ${Screens.pageTitle('ÁREA DA OFICINA', 'Fila de chamados', 'Encontre solicitações por veículo, sintoma ou motorista.')}
     <div class="queue-toolbar">
@@ -387,6 +403,7 @@ Screens.chatOficina = (id) => {
           ${DB.getMsgsByAtendimento(id).map(msg => Screens.chatBubble(msg, session.id)).join('') || Screens.empty('chat', 'A conversa está aberta', 'Envie uma mensagem para combinar a avaliação do veículo.')}
         </div>
         <form id="composer" class="composer" ${at.status === 'concluido' ? 'hidden' : ''}>
+          ${isOficina && DB.isAssinante(session.id) ? Screens.respostasRapidas() : ''}
           <div id="chat-attachment" hidden><img id="chat-foto-preview" alt="Prévia do anexo"><button type="button" class="text-button" id="btn-remove-foto">Remover foto</button></div>
           <div class="chat-input-row">
             <button type="button" class="btn btn-secondary btn-sm" id="btn-chat-foto" aria-label="Anexar foto">${Screens.icon('plus')}</button>
@@ -425,7 +442,7 @@ Screens.chatsLista = () => {
     <div class="request-list">${items.map(({ at, c, last, v, nome }) => `<button class="request-row conversation-row" data-action="abrir-chat" data-atendimento="${Screens.escape(at.id)}">
       <span class="icon-tile">${Screens.icon('chat')}</span><span class="request-title"><strong>${Screens.escape(nome || (isOficina ? 'Motorista' : 'Oficina'))}</strong><small>${Screens.escape(Screens.vehicleName(v))} · ${Screens.escape(last?.conteudo || (last?.foto_url ? 'Foto anexada' : 'A conversa está aberta'))}</small></span>
       ${Screens.status(c, at)}${Screens.icon('arrow', 16)}</button>`).join('') ||
-      Screens.empty('chat', 'Nenhuma conversa ainda', isOficina ? 'A conversa é aberta quando um motorista escolhe sua oficina.' : 'Escolha uma das oficinas interessadas para iniciar a conversa.')}</div>
+      Screens.empty('chat', 'Nenhuma conversa ainda', isOficina ? 'Aceite um chamado para iniciar uma conversa.' : 'Cada oficina que aceitar seu chamado abrirá uma conversa.')}</div>
   </div>`;
 };
 
