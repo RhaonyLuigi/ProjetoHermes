@@ -13,7 +13,7 @@ const App = {
     const t = document.createElement('div');
     t.className = `toast toast-${type}`;
     t.textContent = msg;
-    document.getElementById('toast-container').appendChild(t);
+    document.getElementById('toast-container').replaceChildren(t);
     setTimeout(() => { t.style.animation = 'toastOut 0.3s ease forwards'; setTimeout(() => t.remove(), 300); }, 3000);
   },
 
@@ -23,6 +23,7 @@ const App = {
     sc.innerHTML = html;
     sc.scrollTop = 0;
     window.scrollTo(0, 0);
+    Install.update();
   },
 
   // ---- BOTTOM NAV ----
@@ -33,24 +34,18 @@ const App = {
     const menus = {
       motorista: [['home', 'home', 'Início'], ['chat-ia', 'spark', 'Triagem'], ['veiculos', 'car', 'Garagem'], ...common],
       oficina: [['dashboard', 'grid', 'Painel'], ['chamados', 'list', 'Chamados'], ...common],
-      admin: [['admin-dashboard', 'shield', 'Revisões'], ['perfil', 'user', 'Perfil']]
+      admin: [['admin-gestao', 'grid', 'Gestão'], ['admin-dashboard', 'shield', 'Revisões'], ['perfil', 'user', 'Perfil']]
     };
-    const session = DB.getSession();
-    const demo = DB.isDemo(session);
     const role = { motorista: 'Motorista', oficina: 'Oficina', admin: 'Moderação' }[type];
     nav.classList.remove('hidden');
     document.getElementById('app').classList.add('has-nav');
     const bar = document.getElementById('app-bar');
     bar.hidden = false;
-    bar.innerHTML = `<div class="bar-brand">${Screens.brand()}</div><div class="bar-context"><span class="bar-role">${role}</span><span class="bar-divider"></span><span>Ambiente local</span></div>
-      ${demo ? `<div class="bar-actions"><span class="demo-tag"><i></i> Demonstração</span>
-        <details class="demo-switch"><summary class="switch-button">${Screens.icon('swap', 16)} Trocar perfil</summary>
-          <div class="demo-options">${Object.entries(DB.demoPerfis).map(([key, perfil]) => `<button type="button" data-demo="${key}" ${perfil.email === session.email ? 'disabled' : ''} onclick="App.switchDemo('${key}')">${perfil.nome} ${perfil.email === session.email ? '<small>Perfil atual</small>' : ''}</button>`).join('')}</div>
-        </details></div>` : ''}`;
+    bar.innerHTML = `<div class="bar-brand">${Screens.brand()}</div><div class="bar-context"><span class="bar-role">${role}</span></div>
+      <button class="switch-button" data-install hidden>Instalar app</button>`;
     nav.innerHTML = `<div class="nav-brand">${Screens.brand()}<small>ASSISTÊNCIA AUTOMOTIVA</small></div>
       <div class="nav-label-group">${role.toUpperCase()}</div>
-      <div class="nav-links">${menus[type].map(([screen, icon, label]) => `<button class="nav-item" data-screen="${screen}" onclick="App.navigate('${screen}')"><span class="nav-icon">${Screens.icon(icon, 18)}</span><span class="nav-label">${label}</span>${screen === 'notificacoes' ? '<span class="nav-dot" hidden></span>' : ''}</button>`).join('')}</div>
-      <div class="nav-foot"><span class="local-indicator"></span><div><strong>${demo ? 'Modo demonstração' : 'Sessão local'}</strong><small>Dados neste navegador</small></div></div>`;
+      <div class="nav-links">${menus[type].map(([screen, icon, label]) => `<button class="nav-item" data-screen="${screen}" data-nav="${screen}"><span class="nav-icon">${Screens.icon(icon, 18)}</span><span class="nav-label">${label}</span>${screen === 'notificacoes' ? '<span class="nav-dot" hidden></span>' : ''}</button>`).join('')}</div>`;
     this.refreshUnread();
     this.setActiveNav();
   },
@@ -77,12 +72,17 @@ const App = {
     if (dot && session) dot.hidden = !DB.getNotifsByUser(session.id).some(n => !n.lida);
   },
 
-  switchDemo(type) {
-    if (!DB.isDemo(DB.getSession())) return;
-    DB.setupDemoData(type);
-    this.history = [];
-    this.currentScreen = null;
-    this.boot();
+  async runButton(button, operation) {
+    if (button.disabled) return;
+    button.disabled = true;
+    try { return await operation(); }
+    catch (error) {
+      this.toast(error.message, 'error');
+      if (error.status === 401) {
+        DB.setSnapshot({ session: null });
+        this.navigate('login');
+      }
+    } finally { button.disabled = false; }
   },
 
   // ---- NAVIGATE ----
@@ -144,7 +144,9 @@ const App = {
         break;
       case 'veiculos': this.showNav('motorista'); this.render(Screens.meusVeiculos()); this.bindMeusVeiculos(); this.setActiveNav('veiculos'); break;
       case 'chats': { const t = session && session.user_type === 'oficina' ? 'oficina' : 'motorista'; this.showNav(t); this.render(Screens.chatsLista()); this.bindChatsLista(); this.setActiveNav('chats'); break; }
-      case 'notificacoes': this.showNav(role); this.render(Screens.notificacoes()); DB.markAllRead(session.id); this.refreshUnread(); break;
+      case 'notificacoes': this.showNav(role); this.render(Screens.notificacoes());
+        if (DB.getNotifsByUser(session.id).some(n => !n.lida)) DB.mutate('avisos-lidos').then(() => this.refreshUnread()).catch(error => this.toast(error.message, 'error'));
+        break;
       case 'dashboard': this.showNav('oficina'); this.render(Screens.dashboardOficina()); this.bindPainelPro(); break;
       case 'chamados': this.showNav('oficina'); this.render(Screens.chamadosOficina()); this.bindChamados(); this.setActiveNav('chamados'); break;
       case 'procedimento': this.showNav('oficina'); this.render(Screens.registrarProcedimento(param)); this.bindProcedimento(param); break;
@@ -153,6 +155,7 @@ const App = {
       case 'home': this.showNav('motorista'); this.render(Screens.dashboardMotorista()); this.setActiveNav('home'); break;
       case 'avaliar': this.showNav('none'); this.render(Screens.avaliarOficina(param)); this.bindAvaliar(param); break;
       case 'perfil-oficina': this.showNav('none'); this.render(Screens.perfilOficinaPublico(param)); this.bindPerfilOficinaPublico(); document.getElementById('btn-back-perfil-oficina').onclick = () => this.goBack(); break;
+      case 'admin-gestao': this.showNav('admin'); this.render(Screens.adminGestao()); this.bindAdminGestao(); break;
       case 'admin-dashboard': this.showNav('admin'); this.render(Screens.adminDashboard()); this.bindAdminDashboard(); this.setActiveNav('admin-dashboard'); break;
       case 'admin-revisao': this.showNav('none'); this.render(Screens.adminRevisao(param)); this.bindAdminRevisao(param); break;
       default: this.navigate('login');
@@ -173,7 +176,7 @@ const App = {
     const session = DB.getSession();
     if (!session) return this.navigate('login');
     if (session.user_type === 'oficina') return this.navigate('dashboard');
-    if (session.user_type === 'admin') return this.navigate('admin-dashboard');
+    if (session.user_type === 'admin') return this.navigate('admin-gestao');
     this.navigate('home');
   },
 
@@ -181,7 +184,7 @@ const App = {
   boot() {
     const session = DB.getSession();
     if (!session) return this.navigate('login');
-    if (session.user_type === 'admin') return this.navigate('admin-dashboard');
+    if (session.user_type === 'admin') return this.navigate('admin-gestao');
 
     if (session.user_type === 'motorista') {
       const profile = DB.getMotoristaProfile(session.id);
@@ -194,164 +197,108 @@ const App = {
     }
   },
 
-  // ---- BIND: LOGIN ----
   bindLogin() {
     const form = document.getElementById('login-form');
-    form.onsubmit = async event => {
+    const button = document.getElementById('btn-entrar');
+    form.onsubmit = event => {
       event.preventDefault();
-      const email = document.getElementById('login-email').value.trim();
-      const senha = document.getElementById('login-senha').value;
-      const submit = document.getElementById('btn-entrar');
-      submit.disabled = true;
-      try {
-        const user = await DB.findUser(email, senha);
-        if (!form.isConnected) return;
-        if (!user) return this.toast('E-mail ou senha incorretos.', 'error');
-        DB.setSession(user);
+      this.runButton(button, async () => {
+        await DB.authenticate('/api/login', {
+          email: document.getElementById('login-email').value,
+          senha: document.getElementById('login-senha').value
+        });
         this.history = [];
         this.currentScreen = null;
         this.boot();
-      } catch {
-        this.toast('Use o servidor local para acessar sua conta.', 'error');
-      } finally {
-        submit.disabled = false;
-      }
-    };
-    document.getElementById('link-forgot').onclick = () => this.navigate('forgot');
-    document.getElementById('link-cadastro').onclick = () => this.navigate('register');
-    document.getElementById('btn-demo-admin').onclick = () => {
-      DB.setSession({ id: 'admin', user_type: 'admin', email: 'admin@hermes' });
-      this.history = [];
-      this.boot();
-    };
-
-    const btnDemoMot = document.getElementById('btn-demo-mot');
-    if (btnDemoMot) btnDemoMot.onclick = () => {
-      DB.setupDemoData('motorista');
-      this.boot();
-    };
-
-    const btnDemoOfi = document.getElementById('btn-demo-ofi');
-    if (btnDemoOfi) btnDemoOfi.onclick = () => {
-      DB.setupDemoData('oficina');
-      this.boot();
+      });
     };
   },
 
-  // ---- BIND: REGISTER ----
   bindRegister() {
-    // Track selected type via toggle
     let selectedType = 'motorista';
-    const btnM = document.getElementById('reg-toggle-motorista');
-    const btnO = document.getElementById('reg-toggle-oficina');
-    if (btnM && btnO) {
-      btnM.onclick = () => { selectedType = 'motorista'; btnM.classList.add('active'); btnO.classList.remove('active'); };
-      btnO.onclick = () => { selectedType = 'oficina'; btnO.classList.add('active'); btnM.classList.remove('active'); };
-    }
+    const buttons = [...document.querySelectorAll('[data-tipo-conta]')];
+    buttons.forEach(button => button.onclick = () => {
+      selectedType = button.dataset.tipoConta;
+      buttons.forEach(item => {
+        item.classList.toggle('active', item === button);
+        item.setAttribute('aria-pressed', String(item === button));
+      });
+    });
     const submit = document.getElementById('btn-criar');
-    submit.onclick = async () => {
-      const emailInput = document.getElementById('reg-email');
-      const email = emailInput.value.trim();
+    document.getElementById('register-form').onsubmit = event => {
+      event.preventDefault();
+      const email = document.getElementById('reg-email').value;
       const senha = document.getElementById('reg-senha').value;
-      const confirm = document.getElementById('reg-confirm').value;
-      if (!email || !senha) return this.toast('Preencha todos os campos.', 'error');
-      if (!emailInput.reportValidity()) return;
-      if (senha !== confirm) return this.toast('As senhas não coincidem.', 'error');
-      if (senha.length < 6) return this.toast('Senha deve ter ao menos 6 caracteres.', 'error');
-      submit.disabled = true;
-      try {
-        const result = await DB.createUser(email, senha, selectedType);
-        if (result.error) return this.toast(result.error, 'error');
-        if (!submit.isConnected) return;
-        DB.setSession(result.user);
+      if (senha !== document.getElementById('reg-confirm').value) return this.toast('As senhas não coincidem.', 'error');
+      this.runButton(submit, async () => {
+        await DB.authenticate('/api/cadastro', { email, senha, user_type: selectedType });
+        this.history = [];
+        this.currentScreen = null;
         this.toast('Conta criada. Complete seu perfil.', 'success');
         this.boot();
-      } catch {
-        this.toast('Use o servidor local para criar sua conta.', 'error');
-      } finally {
-        submit.disabled = false;
-      }
+      });
     };
-    document.getElementById('link-login').onclick = () => this.navigate('login');
   },
 
-  // ---- BIND: FORGOT ----
   bindForgot() {
-    document.getElementById('btn-back-forgot').onclick = () => this.navigate('login');
+    const form = document.getElementById('recuperar-form');
+    if (!form) return;
+    form.onsubmit = event => {
+      event.preventDefault();
+      const senha = document.getElementById('recuperar-senha').value;
+      if (senha !== document.getElementById('recuperar-confirmar').value) return this.toast('As senhas não coincidem.', 'error');
+      this.runButton(form.querySelector('button'), async () => {
+        await DB.request('/api/recuperar', { token: new URLSearchParams(location.hash.slice(1)).get('recuperar'), senha });
+        window.history.replaceState(null, '', location.pathname);
+        DB.setSnapshot({ session: null });
+        this.toast('Senha redefinida. Entre com a nova senha.', 'success');
+        this.navigate('login');
+      });
+    };
   },
 
-  // ---- BIND: CHECKIN MOTORISTA ----
-  bindCheckinMotorista() {
-    const circle = document.getElementById('avatar-motorista-circle');
-    const input = document.getElementById('avatar-motorista-input');
+  bindCheckinMotorista() { this.bindCheckin('motorista'); },
+  bindCheckinOficina() { this.bindCheckin('oficina'); },
+
+  bindCheckin(tipo) {
+    const oficina = tipo === 'oficina';
+    const circle = document.getElementById('avatar-' + tipo + '-circle');
+    const input = document.getElementById('avatar-' + tipo + '-input');
+    const submit = document.getElementById('btn-salvar-' + tipo);
+    let foto = '';
     circle.onclick = () => input.click();
-    input.onchange = (e) => {
-      const file = e.target.files[0];
+    input.onchange = () => {
+      const file = input.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        circle.innerHTML = `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;
-        circle.dataset.foto = ev.target.result;
-      };
-      reader.readAsDataURL(file);
+      this.runButton(submit, async () => {
+        foto = await this.readPhoto(file);
+        const img = document.createElement('img');
+        img.src = foto;
+        img.alt = '';
+        circle.replaceChildren(img);
+      });
     };
-    document.getElementById('btn-salvar-motorista').onclick = () => {
-      const session = DB.getSession();
-      if (!session) return this.navigate('login');
-      const nome = document.getElementById('motorista-nome').value.trim();
-      const tel = document.getElementById('motorista-tel').value.trim();
-      if (!nome || !tel) return this.toast('Preencha nome e telefone.', 'error');
-      DB.saveMotoristaProfile(session.id, { nome, telefone: tel, foto_url: document.getElementById('avatar-motorista-circle').dataset.foto || '' });
-      this.toast('Perfil salvo!', 'success');
-      this.navigate('veiculo-form', 'home');
-    };
+    submit.onclick = () => this.runButton(submit, async () => {
+      const value = field => document.getElementById(tipo + '-' + field).value;
+      await DB.mutate('perfil', {
+        nome: value('nome'), cidade: value('cidade'), uf: value('uf'), foto_url: foto,
+        ...(oficina ? { cnpj: value('cnpj'), sobre: value('sobre') } : { telefone: value('tel') })
+      });
+      this.toast(oficina ? 'Cadastro enviado para verificação.' : 'Perfil salvo.', 'success');
+      this.navigate(oficina ? 'dashboard' : 'veiculo-form', oficina ? undefined : 'home');
+    });
   },
 
-  // ---- BIND: CHECKIN OFICINA ----
-  bindCheckinOficina() {
-    const circle = document.getElementById('avatar-oficina-circle');
-    const input = document.getElementById('avatar-oficina-input');
-    circle.onclick = () => input.click();
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        circle.innerHTML = `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;
-        circle.dataset.foto = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-    };
-    document.getElementById('btn-salvar-oficina').onclick = () => {
-      const session = DB.getSession();
-      if (!session) return this.navigate('login');
-      const nome = document.getElementById('oficina-nome').value.trim();
-      const cnpj = document.getElementById('oficina-cnpj').value.trim();
-      const sobre = document.getElementById('oficina-sobre').value.trim();
-      if (!nome || !cnpj) return this.toast('Preencha nome e CNPJ.', 'error');
-      DB.saveOficinaProfile(session.id, { nome_oficina: nome, cnpj, sobre, foto_url: document.getElementById('avatar-oficina-circle').dataset.foto || '' });
-      this.toast('Perfil da oficina salvo!', 'success');
-      this.navigate('dashboard');
-    };
-  },
-
-  // ---- BIND: VEICULO FORM ----
   bindVeiculoForm() {
-    document.getElementById('btn-back-veiculo').onclick = () => this.goBack();
-    document.getElementById('btn-salvar-veiculo').onclick = () => {
-      const session = DB.getSession();
-      if (!session) return this.navigate('login');
-      const marca = document.getElementById('v-marca').value.trim();
-      const modelo = document.getElementById('v-modelo').value.trim();
-      const ano = document.getElementById('v-ano').value.trim();
-      const placa = document.getElementById('v-placa').value.trim().toUpperCase();
-      const cor = document.getElementById('v-cor').value.trim();
-      if (!marca || !modelo || !ano || !placa) return this.toast('Preencha todos os campos obrigatórios.', 'error');
-      if (!/^\d{4}$/.test(ano)) return this.toast('Informe o ano com quatro dígitos.', 'error');
-      DB.saveVeiculo(session.id, { marca, modelo, ano, placa, cor });
-      this.toast('Veículo cadastrado!', 'success');
-      this.navigate(this.currentParam || 'veiculos');
-    };
+    const submit = document.getElementById('btn-salvar-veiculo');
+    submit.onclick = () => this.runButton(submit, async () => {
+      const fields = ['marca', 'modelo', 'ano', 'placa', 'cor'];
+      const data = Object.fromEntries(fields.map(key => [key, document.getElementById('v-' + key).value]));
+      const next = this.currentParam;
+      await DB.mutate('veiculo', data);
+      this.toast('Veículo cadastrado.', 'success');
+      this.navigate(next || 'veiculos');
+    });
   },
 
   // ---- BIND: MEUS VEÍCULOS ----
@@ -367,61 +314,50 @@ const App = {
     });
   },
 
-  // ---- BIND: PROCEDIMENTO ----
   bindProcedimento(atendimentoId) {
     document.getElementById('btn-back-proc').onclick = () => this.navigate('chat-oficina', atendimentoId);
-
     const add = document.getElementById('btn-add-proc');
     const close = document.getElementById('btn-concluir-atendimento');
-    add.onclick = async () => {
-      const desc = document.getElementById('proc-desc').value.trim();
-      const costInput = document.getElementById('proc-custo');
-      if (!desc || !costInput.value || !costInput.checkValidity()) return this.toast('Informe uma descrição e um valor válido.', 'error');
-      add.disabled = true;
-      try {
-        const saved = await this.withLocalWrite(() => {
-          if (DB.getAtendimentoById(atendimentoId)?.status !== 'aceito') return false;
-          DB.saveProcedimento(atendimentoId, desc, costInput.valueAsNumber.toFixed(2));
-          return true;
-        });
-        if (!add.isConnected) return;
-        if (!saved) return this.navigate('chat-oficina', atendimentoId);
-        document.getElementById('proc-desc').value = '';
-        costInput.value = '';
-        document.getElementById('procs-list').innerHTML = Screens.procedures(DB.getProcedimentosByAtendimento(atendimentoId));
-        this.toast('Serviço registrado.', 'success');
-      } catch {
-        this.toast('Não foi possível salvar o serviço.', 'error');
-      } finally {
-        add.disabled = false;
-      }
-    };
-
-    close.onclick = async () => {
-      close.disabled = true;
-      try {
-        const updated = await this.withLocalWrite(() => {
-          if (!DB.solicitarConclusao(atendimentoId)) return false;
-          const at = DB.getAtendimentoById(atendimentoId);
-          const chamado = DB.getChamadoById(at.chamado_id);
-          DB.addNotif(chamado.motorista_id, 'A oficina solicitou a conclusão', 'Confira os serviços e confirme a conclusão na conversa.', { screen: 'chat-oficina', id: at.id });
-          return true;
-        });
-        if (!close.isConnected) return;
-        if (updated) this.toast('Pedido de conclusão enviado.', 'success');
-        this.navigate('chat-oficina', atendimentoId);
-      } catch {
-        this.toast('Não foi possível atualizar o atendimento.', 'error');
-      } finally {
-        close.disabled = false;
-      }
-    };
+    let pending = null;
+    add.onclick = () => this.runButton(add, async () => {
+      const desc = document.getElementById('proc-desc');
+      const cost = document.getElementById('proc-custo');
+      if (!desc.value.trim() || !cost.value || !cost.checkValidity()) return this.toast('Informe uma descrição e um valor válido.', 'error');
+      const centavos = Math.round(cost.valueAsNumber * 100);
+      if (!pending || pending.descricao !== desc.value || pending.centavos !== centavos) pending = { id: DB._id(), descricao: desc.value, centavos };
+      await DB.mutate('servico', { atendimentoId, ...pending });
+      pending = null;
+      if (!add.isConnected) return;
+      desc.value = '';
+      cost.value = '';
+      document.getElementById('procs-list').innerHTML = Screens.procedures(DB.getProcedimentosByAtendimento(atendimentoId));
+      this.toast('Serviço registrado.', 'success');
+    });
+    close.onclick = () => this.runButton(close, async () => {
+      await DB.mutate('solicitar-conclusao', { atendimentoId });
+      this.toast('Pedido de conclusão enviado.', 'success');
+      this.navigate('chat-oficina', atendimentoId);
+    });
   },
 
   // ---- BIND: PERFIL ----
   bindPerfil() {
+    const edit = document.getElementById('editar-perfil');
+    if (edit) edit.onsubmit = event => {
+      event.preventDefault();
+      this.runButton(edit.querySelector('button'), async () => {
+        await DB.mutate('atualizar-perfil', Object.fromEntries(new FormData(edit)));
+        this.navigate('perfil');
+        this.toast('Perfil atualizado.', 'success');
+      });
+    };
     const btnLogout = document.getElementById('btn-logout');
-    if (btnLogout) btnLogout.onclick = () => { DB.clearSession(); this.history = []; this.currentScreen = null; this.navigate('login'); };
+    if (btnLogout) btnLogout.onclick = () => this.runButton(btnLogout, async () => {
+      await DB.clearSession();
+      this.history = [];
+      this.currentScreen = null;
+      this.navigate('login');
+    });
 
     const btnFoto = document.getElementById('btn-change-foto');
     const inputFoto = document.getElementById('input-change-foto');
@@ -433,8 +369,8 @@ const App = {
         try {
           const photo = await this.readPhoto(file);
           if (!inputFoto.isConnected) return;
-          const session = DB.getSession();
-          DB.updateProfileFoto(session.id, session.user_type, photo);
+          await DB.mutate('foto-perfil', { foto: photo });
+          if (!inputFoto.isConnected) return;
           this.toast('Foto de perfil atualizada!', 'success');
           this.render(Screens.perfil());
           this.bindPerfil();
@@ -465,27 +401,11 @@ const App = {
 
     const submit = document.getElementById('btn-enviar-avaliacao');
     const skip = document.getElementById('btn-pular-avaliacao');
-    const finish = async (avaliar, comentario = '') => {
-      submit.disabled = skip.disabled = true;
-      try {
-        const updated = await this.withLocalWrite(() => {
-          const at = DB.getAtendimentoById(atendimentoId);
-          if (at?.status !== 'aguardando_conclusao') return false;
-          const chamado = DB.getChamadoById(at.chamado_id);
-          if (avaliar) DB.saveAvaliacao(atendimentoId, at.oficina_id, chamado.motorista_id, notas, comentario);
-          DB.concludeAtendimento(atendimentoId);
-          DB.addNotif(at.oficina_id, 'Atendimento concluído', 'O motorista confirmou a conclusão.', { screen: 'chat-oficina', id: at.id });
-          return true;
-        });
-        if (!submit.isConnected) return;
-        if (updated) this.toast(avaliar ? 'Atendimento concluído e avaliação salva.' : 'Atendimento concluído.', 'success');
-        this.navigate('aguardando', DB.getAtendimentoById(atendimentoId).chamado_id);
-      } catch {
-        this.toast('Não foi possível concluir o atendimento.', 'error');
-      } finally {
-        submit.disabled = skip.disabled = false;
-      }
-    };
+    const finish = (avaliar, comentario = '') => this.runButton(avaliar ? submit : skip, async () => {
+      const result = await DB.mutate('concluir', { atendimentoId, notas: avaliar ? notas : null, comentario });
+      this.toast('Atendimento concluído.', 'success');
+      this.navigate('aguardando', result.chamadoId);
+    });
     submit.onclick = () => {
       const comentario = document.getElementById('aval-comentario').value.trim();
       if (notas.transparencia === 0 || notas.prazo === 0 || notas.qualidade === 0 || notas.organizacao === 0) {
@@ -500,64 +420,63 @@ const App = {
     skip.onclick = () => finish(false);
   },
 
-  // ---- BIND: PERFIL OFICINA PUBLICO (RESPONDER/REVISAR) ----
   bindPerfilOficinaPublico() {
-    document.querySelectorAll('[data-action="responder-aval"]').forEach(btn => {
-      btn.onclick = () => {
-        const avalId = btn.dataset.aval;
-        const resposta = prompt('Digite sua resposta para esta avaliação:');
-        if (resposta && resposta.trim() !== '') {
-          DB.responderAvaliacao(avalId, resposta);
-          this.toast('Resposta enviada!', 'success');
-          this.render(Screens.perfilOficinaPublico(this.currentParam));
-          this.bindPerfilOficinaPublico();
-        }
-      };
-    });
-    document.querySelectorAll('[data-action="revisar-aval"]').forEach(btn => {
-      btn.onclick = () => {
-        const avalId = btn.dataset.aval;
-        if (confirm('Tem certeza que deseja solicitar a revisão desta avaliação para a administração?')) {
-          DB.solicitarRevisaoAvaliacao(avalId);
-          this.toast('Revisão solicitada à administração.', 'info');
-          this.render(Screens.perfilOficinaPublico(this.currentParam));
-          this.bindPerfilOficinaPublico();
-        }
+    const oficinaId = this.currentParam;
+    document.querySelectorAll('[data-action="responder-aval"],[data-action="revisar-aval"]').forEach(button => {
+      button.onclick = () => {
+        const responder = button.dataset.action === 'responder-aval';
+        const mensagem = responder ? prompt('Digite sua resposta para a avaliação:') : '';
+        if (responder ? !mensagem?.trim() : !confirm('Solicitar revisão desta avaliação?')) return;
+        this.runButton(button, async () => {
+          await DB.mutate('avaliacao', { id: button.dataset.aval, acao: responder ? 'responder' : 'revisar', texto: mensagem });
+          if (this.currentScreen === 'perfil-oficina') this.navigate('perfil-oficina', oficinaId);
+        });
       };
     });
   },
 
-  // ---- BIND: ADMIN DASHBOARD E REVISAO ----
   bindAdminDashboard() {
     document.querySelectorAll('[data-action="abrir-revisao"]').forEach(btn => {
-      btn.onclick = () => {
-        this.navigate('admin-revisao', btn.dataset.aval);
-      };
+      btn.onclick = () => this.navigate('admin-revisao', btn.dataset.aval);
     });
   },
+
   bindAdminRevisao(avalId) {
-    const btnExcluir = document.getElementById('btn-admin-excluir');
-    if (btnExcluir) btnExcluir.onclick = () => {
-      if (confirm('Confirmar a exclusão desta avaliação?')) {
-        DB.excluirAvaliacao(avalId);
-        this.toast('Avaliação excluída.', 'success');
+    const remove = document.getElementById('btn-admin-excluir');
+    const comment = document.getElementById('btn-admin-comentar');
+    remove.onclick = () => {
+      if (!confirm('Remover esta avaliação?')) return;
+      this.runButton(remove, async () => {
+        await DB.mutate('avaliacao', { id: avalId, acao: 'excluir' });
         this.navigate('admin-dashboard');
-      }
+      });
     };
-    const btnComentar = document.getElementById('btn-admin-comentar');
-    if (btnComentar) btnComentar.onclick = () => {
-      const comentario = prompt('Comentário do Administrador para o público:');
-      if (comentario && comentario.trim() !== '') {
-        DB.comentarAvaliacaoAdmin(avalId, comentario);
-        this.toast('Avaliação mantida e comentário adicionado.', 'success');
+    comment.onclick = () => {
+      const texto = prompt('Comentário da administração:');
+      if (!texto?.trim()) return;
+      this.runButton(comment, async () => {
+        await DB.mutate('avaliacao', { id: avalId, acao: 'comentar', texto });
         this.navigate('admin-dashboard');
-      }
+      });
     };
+  },
+
+  async initialize() {
+    try {
+      await DB.refresh();
+      if (new URLSearchParams(location.hash.slice(1)).has('recuperar')) this.navigate('forgot');
+      else this.boot();
+    } catch (error) {
+      this.render(Screens.conexao(error.message));
+    }
   }
 };
 
-// ---- INIT ----
-document.addEventListener('DOMContentLoaded', async () => {
-  try { await App.withLocalWrite(() => DB.migrarInteresses()); }
-  finally { App.boot(); }
+document.addEventListener('click', event => {
+  const button = event.target.closest('button[data-nav],button[data-voltar],button[data-retry]');
+  if (!button || button.disabled) return;
+  if (button.hasAttribute('data-voltar')) App.goBack();
+  else if (button.hasAttribute('data-retry')) App.initialize();
+  else App.navigate(button.dataset.nav, button.dataset.param);
 });
+document.addEventListener('DOMContentLoaded', () => App.initialize());

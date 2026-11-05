@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101d2d" />
   <title>Hermes · Assistência automotiva</title>
   <meta name="description" content="Relate um problema no seu veículo, acompanhe o chamado e converse com a oficina." />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/img/icon-192.png" />
+  <link rel="apple-touch-icon" href="/img/icon-192.png" />
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="stylesheet" href="css/hermes.css" />
 </head>
@@ -16,9 +16,15 @@
   <div id="app">
     <nav id="bottom-nav" class="bottom-nav hidden" aria-label="Navegação principal"></nav>
     <header id="app-bar" hidden></header>
-    <main id="screen-container"></main>
+    <main id="screen-container"><p class="screen" role="status">Carregando Hermes…</p></main>
     <div id="toast-container" role="status" aria-live="polite"></div>
   </div>
+  <dialog class="card install-help" id="install-help">
+    <h2 class="card-title">Instalar o Hermes</h2>
+    <p class="muted">No Android, abra o menu do navegador e selecione Instalar app ou Adicionar à tela inicial. No iPhone, abra no Safari e use Compartilhar → Adicionar à Tela de Início.</p>
+    <form method="dialog"><button class="btn btn-secondary btn-sm">Fechar</button></form>
+  </dialog>
+  <noscript>Ative o JavaScript para usar o Hermes.</noscript>
   <script src="js/db.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/screens.js"></script>
@@ -27,5 +33,7 @@
   <script src="js/planos.js"></script>
   <script src="js/app.js"></script>
   <script src="js/fluxo.js"></script>
+  <script src="js/gestao.js"></script>
+  <script src="js/install.js"></script>
 </body>
 </html>

@@ -27,7 +27,7 @@ const icones = {
 Screens.icon = (name, size = 20) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icones[name] || ''}</svg>`;
 Screens.escape = (value) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 Screens.multiline = (value) => Screens.escape(value).replace(/\r?\n/g, '<br>');
-Screens.foto = (value) => /^data:image\/(?:jpeg|png|gif|webp|avif);base64,[a-z0-9+/=]+$/i.test(value || '') ? value : '';
+Screens.foto = (value) => /^\/api\/fotos\/(?:perfil|mensagem)\/[a-f0-9-]{36}$/i.test(value || '') ? value : '';
 Screens.money = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value));
 Screens.brand = () => `<span class="brand"><span class="brand-mark"><svg width="25" height="25" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M5 22 10 6h4l-5 16H5Zm9 0 5-16h4l-5 16h-4Z" fill="currentColor"/><path d="M9 12h10v4H9z" fill="currentColor"/></svg></span><span>hermes<span class="brand-dot">.</span></span></span>`;
 Screens.vehicleName = (v) => v ? `${v.marca} ${v.modelo}` : 'Veículo';
@@ -59,27 +59,20 @@ Screens.login = () => `
         <p>Conte o que está acontecendo com seu veículo, prepare um pré-diagnóstico e converse com quem pode ajudar.</p>
       </div>
       <img class="welcome-diagram" src="img/vehicle-diagram.svg" alt="" />
-      <small>PROJETO ACADÊMICO <span>·</span> HERMES</small>
+      <small>HERMES <span>·</span> ASSISTÊNCIA AUTOMOTIVA</small>
     </section>
     <section class="welcome-access">
       <div class="welcome-access-inner">
-        <p class="eyebrow">EXPLORE O HERMES</p>
-        <h2>Por onde quer começar?</h2>
-        <p class="page-subtitle">Experimente os dois lados do atendimento com dados de demonstração.</p>
-        <div class="demo-choices">
-          <button class="demo-choice demo-primary" id="btn-demo-mot"><span class="icon-tile">${Screens.icon('car')}</span><span><strong>Entrar como motorista</strong><small>Relate um problema no veículo</small></span>${Screens.icon('arrow')}</button>
-          <button class="demo-choice" id="btn-demo-ofi"><span class="icon-tile">${Screens.icon('wrench')}</span><span><strong>Entrar como oficina</strong><small>Analise chamados e converse com motoristas</small></span>${Screens.icon('arrow')}</button>
-        </div>
-        <details class="login-details"><summary>Já tem uma conta local?</summary>
-          <form id="login-form">
-            <div class="form-group"><label for="login-email">E-mail</label><input class="input" type="email" id="login-email" autocomplete="username" required></div>
-            <div class="form-group"><label for="login-senha">Senha</label><input class="input" type="password" id="login-senha" autocomplete="current-password" required></div>
-            <button class="btn btn-primary" id="btn-entrar">Entrar</button>
-            <div class="row-actions"><button class="text-button" type="button" id="link-cadastro">Criar conta local</button><button class="text-button" type="button" id="link-forgot">Esqueci a senha</button></div>
-          </form>
-        </details>
-        <p class="local-note">${Screens.icon('shield', 16)} Os dados desta demonstração ficam neste navegador.</p>
-        <button class="text-button" id="btn-demo-admin">Moderação local de avaliações</button>
+        <p class="eyebrow">ACESSO À SUA CONTA</p>
+        <h2>Entre no Hermes</h2>
+        <p class="page-subtitle">Acompanhe seus atendimentos em qualquer dispositivo.</p>
+        <form id="login-form" class="login-form">
+          <div class="form-group"><label for="login-email">E-mail</label><input class="input" type="email" id="login-email" autocomplete="username" maxlength="254" required></div>
+          <div class="form-group"><label for="login-senha">Senha</label><input class="input" type="password" id="login-senha" autocomplete="current-password" maxlength="128" required></div>
+          <button class="btn btn-primary" id="btn-entrar">Entrar</button>
+          <div class="row-actions login-links"><button class="text-button" type="button" data-nav="register">Criar conta</button><button class="text-button" type="button" data-nav="forgot">Esqueci a senha</button></div>
+        </form>
+        <button class="text-button" data-install hidden>Instalar Hermes</button>
       </div>
     </section>
   </div>`;
@@ -91,7 +84,7 @@ Screens.driverCard = (c) => {
     <span class="icon-tile">${Screens.icon('car')}</span>
     <div class="request-title"><strong>${Screens.escape(Screens.vehicleName(v))}</strong><p>${Screens.escape(categoria)} · ${c.total_oficinas} de ${c.limite_oficinas} oficinas</p></div>
     ${Screens.status(c)}
-    <button class="text-button request-link" onclick="App.navigate('aguardando', '${Screens.escape(c.id)}')">Ver chamado ${Screens.icon('arrow', 16)}</button>
+    <button class="text-button request-link" data-nav="aguardando" data-param="${Screens.escape(c.id)}">Ver chamado ${Screens.icon('arrow', 16)}</button>
   </article>`;
 };
 
@@ -112,7 +105,7 @@ Screens.dashboardMotorista = () => {
         <span class="hero-label"><span></span> TRIAGEM DE SINTOMAS</span>
         <h2>O que está acontecendo<br>com seu veículo?</h2>
         <p>Responda algumas perguntas e envie à oficina um resumo do que você percebeu.</p>
-        <button class="btn btn-accent" onclick="App.navigate('chat-ia')">${Screens.icon(draft ? 'arrow' : 'plus', 18)} ${draft ? 'Retomar triagem' : 'Iniciar triagem'}</button>
+        <button class="btn btn-accent" data-nav="chat-ia">${Screens.icon(draft ? 'arrow' : 'plus', 18)} ${draft ? 'Retomar triagem' : 'Iniciar triagem'}</button>
       </div>
     </section>
     ${Screens.anuncio(session)}
@@ -125,7 +118,7 @@ Screens.dashboardMotorista = () => {
       <aside class="garage-panel">
         <div class="section-heading"><div><h2>Minha garagem</h2><p>Seus veículos cadastrados.</p></div><span class="icon-tile">${Screens.icon('car')}</span></div>
         ${veiculos.slice(0, 3).map(v => `<div class="garage-car"><strong>${Screens.escape(Screens.vehicleName(v))}</strong><small>${Screens.escape([v.ano, v.placa].filter(Boolean).join(' · '))}</small></div>`).join('') || '<p class="muted">Nenhum veículo cadastrado.</p>'}
-        <button class="text-button" onclick="App.navigate('veiculos')">Ver garagem ${Screens.icon('arrow', 16)}</button>
+        <button class="text-button" data-nav="veiculos">Ver garagem ${Screens.icon('arrow', 16)}</button>
         ${Screens.favoritas(session)}
       </aside>
     </div>
@@ -161,13 +154,13 @@ Screens.chatIA = (draft, veiculos, limites) => {
   if (!v) {
     conteudo = `<h2>Qual veículo precisa de atenção?</h2><p>Escolha um veículo da sua garagem para começar.</p>
       <div class="choice-grid">${veiculos.map(item => `<button class="choice-card" data-veiculo="${Screens.escape(item.id)}"><span class="icon-tile">${Screens.icon('car')}</span><span><strong>${Screens.escape(Screens.vehicleName(item))}</strong><small>${Screens.escape([item.ano, item.placa].filter(Boolean).join(' · '))}</small></span>${Screens.icon('arrow', 17)}</button>`).join('')}
-      <button class="choice-card choice-outline" onclick="App.navigate('veiculo-form', 'chat-ia')"><span class="icon-tile">${Screens.icon('plus')}</span><span><strong>Cadastrar veículo</strong><small>Adicione à sua garagem</small></span></button></div>`;
+      <button class="choice-card choice-outline" data-nav="veiculo-form" data-param="chat-ia"><span class="icon-tile">${Screens.icon('plus')}</span><span><strong>Cadastrar veículo</strong><small>Adicione à sua garagem</small></span></button></div>`;
   } else if (!limite) {
     conteudo = `<h2>Quantas oficinas podem aceitar?</h2><p>Esse é o máximo de oficinas que podem entrar no chamado. Você pode conversar com todas as que aceitarem.</p>
       <div class="choice-grid limite-grid">${limites.map(numero => `<button class="choice-card" data-limite-oficinas="${numero}"><span class="icon-tile">${numero}</span><strong>Até ${numero} oficinas</strong>${Screens.icon('arrow', 16)}</button>`).join('')}</div>
       ${Screens.atalhoPlano(DB.getSession())}`;
   } else if (!categoria) {
-    conteudo = `<h2>Qual é o principal sintoma?</h2><p>Escolha a opção mais próxima do que você percebeu.</p>
+    conteudo = `<h2>Qual é o principal sintoma?</h2><p>Escolha a opção mais próxima do que você percebeu. Oficinas verificadas da sua cidade poderão ler o relato enviado.</p>
       <div class="choice-grid">${Object.entries(Triagem.categorias).map(([key, grupo]) => `<button class="choice-card" data-categoria="${key}"><span class="icon-tile">${Screens.icon(grupo.icone)}</span><span><strong>${grupo.nome}</strong><small>${grupo.exemplo}</small></span></button>`).join('')}</div>`;
   } else if (pergunta) {
     const value = draft.respostas[draft.indice] || '';
@@ -198,7 +191,7 @@ Screens.chatIA = (draft, veiculos, limites) => {
       </section>
       <aside class="context-panel"><span class="icon-tile">${Screens.icon('spark')}</span><h2>Sua triagem</h2>
         <dl><dt>Veículo</dt><dd>${v ? Screens.escape(Screens.vehicleName(v)) : 'A selecionar'}</dd><dt>Limite</dt><dd>${limite ? `${limite} oficinas` : 'A selecionar'}</dd><dt>Sintoma</dt><dd>${categoria?.nome || 'A selecionar'}</dd></dl>
-        <p>Você pode sair e retomar de onde parou neste navegador.</p>
+        <p>O rascunho fica disponível enquanto você usa esta aba.</p>
         ${draft ? '<button class="text-button" id="btn-descartar-triagem">Descartar rascunho</button>' : ''}
       </aside>
     </div>
@@ -245,8 +238,8 @@ Screens.oficinasDoChamado = (chamado, atendimentos, session) => {
       ${assinante ? `<button class="text-button" data-oficina-favorita="${Screens.escape(oficinaId)}" aria-pressed="${favorita}">${favorita ? '★ Favorita' : '☆ Favoritar'}</button>` : ''}</div>
       ${procs.length ? `<p class="muted">Serviços registrados <strong>${Screens.money(procs.reduce((soma, p) => soma + (Number(p.custo) || 0), 0))}</strong></p>` : ''}
       <div class="row-actions oferta-actions">
-        <button class="text-button" onclick="App.navigate('perfil-oficina', '${Screens.escape(oficinaId)}')" aria-label="Ver perfil de ${nome}">Ver perfil</button>
-        <button class="btn btn-primary btn-sm" data-abrir-atendimento="${Screens.escape(atendimento.id)}" onclick="App.navigate('chat-oficina', this.dataset.abrirAtendimento)" aria-label="Abrir conversa com ${nome}">Abrir conversa ${Screens.icon('chat', 16)}</button>
+        <button class="text-button" data-nav="perfil-oficina" data-param="${Screens.escape(oficinaId)}" aria-label="Ver perfil de ${nome}">Ver perfil</button>
+        <button class="btn btn-primary btn-sm" data-abrir-atendimento="${Screens.escape(atendimento.id)}" data-nav="chat-oficina" data-param="${Screens.escape(atendimento.id)}" aria-label="Abrir conversa com ${nome}">Abrir conversa ${Screens.icon('chat', 16)}</button>
       </div>
     </article>`;
   }).join('')}</div>
@@ -266,7 +259,7 @@ Screens.detalheChamado = (c, isOficina) => {
   const stages = [['Triagem enviada', true], ['Conversas abertas', c.total_oficinas > 0 || done], ['Concluído', done]];
   let proximoPasso = '';
   if (at) {
-    proximoPasso = `<button class="btn btn-primary" onclick="App.navigate('chat-oficina', '${Screens.escape(at.id)}')">${Screens.icon('chat', 17)} Abrir conversa</button>`;
+    proximoPasso = `<button class="btn btn-primary" data-nav="chat-oficina" data-param="${Screens.escape(at.id)}">${Screens.icon('chat', 17)} Abrir conversa</button>`;
   } else if (participacao?.status === 'nao_selecionado') {
     proximoPasso = '<p>Participação encerrada no fluxo anterior do Hermes.</p>';
   } else if (prioridadeAte) {
@@ -277,7 +270,7 @@ Screens.detalheChamado = (c, isOficina) => {
     proximoPasso = '<p>Você pode fechar as vagas quando tiver conversas suficientes.</p><button class="btn btn-secondary" id="fechar-aceites">Fechar vagas</button>';
   }
   return `<div class="screen workspace-screen">
-    <button class="text-button detail-back" onclick="App.navigate('${isOficina ? 'chamados' : 'home'}')">${Screens.icon('back', 16)} Voltar aos chamados</button>
+    <button class="text-button detail-back" data-nav="${isOficina ? 'chamados' : 'home'}">${Screens.icon('back', 16)} Voltar aos chamados</button>
     ${Screens.pageTitle('ACOMPANHAMENTO', Screens.escape(Screens.vehicleName(v)), `Chamado aberto em ${Screens.formatDate(c.enviado_em || c.created_at)}`, Screens.status(c, participacao))}
     ${conversas.length ? Screens.oficinasDoChamado(c, conversas, session) : ''}
     <div class="triage-grid">
@@ -314,7 +307,7 @@ Screens.workshopCard = (c, at) => {
     <h3>${Screens.escape(Screens.vehicleName(v))}</h3><p class="muted">${Screens.escape(motorista?.nome || 'Motorista')} · ${Screens.escape(categoria)}</p>
     <p class="workshop-excerpt">${Screens.escape(relato.slice(0, 130))}${relato.length > 130 ? '…' : ''}</p>
     ${!at ? `<p class="muted">${c.vagas_restantes} ${c.vagas_restantes === 1 ? 'vaga disponível' : 'vagas disponíveis'}</p>` : ''}
-    <div class="workshop-card-bottom"><small>${Screens.timeSince(c.enviado_em || c.created_at)}</small><button class="text-button" onclick="App.navigate('detalhe-oficina', '${Screens.escape(c.id)}')">Ver chamado ${Screens.icon('arrow', 16)}</button></div>
+    <div class="workshop-card-bottom"><small>${Screens.timeSince(c.enviado_em || c.created_at)}</small><button class="text-button" data-nav="detalhe-oficina" data-param="${Screens.escape(c.id)}">Ver chamado ${Screens.icon('arrow', 16)}</button></div>
   </article>`;
 };
 
@@ -332,8 +325,9 @@ Screens.dashboardOficina = () => {
   return `<div class="screen workspace-screen">
     ${Screens.pageTitle('ÁREA DA OFICINA', Screens.escape(profile?.nome_oficina || 'Painel da oficina'), 'Analise os sintomas e organize os atendimentos da sua oficina.', Screens.atalhoPlano(session))}
     <div class="metrics-strip">${metrics.map(([icon, value, label]) => `<div class="metric-tile"><span class="icon-tile">${Screens.icon(icon)}</span><strong>${value}</strong><span>${label}</span></div>`).join('')}</div>
+    ${Screens.verificacao(profile)}
     ${DB.isAssinante(session.id) ? Screens.painelPro(session.id) : Screens.anuncio(session)}
-    <div class="section-heading"><div><h2>Chamados disponíveis</h2><p>Leia o pré-diagnóstico e aceite para abrir uma conversa.</p></div><button class="text-button" onclick="App.navigate('chamados')">Ver todos ${Screens.icon('arrow', 16)}</button></div>
+    <div class="section-heading"><div><h2>Chamados disponíveis</h2><p>Leia o pré-diagnóstico e aceite para abrir uma conversa.</p></div><button class="text-button" data-nav="chamados">Ver todos ${Screens.icon('arrow', 16)}</button></div>
     <div class="workshop-grid">${novos.slice(0, 4).map(c => Screens.workshopCard(c)).join('')}</div>
     ${novos.length ? '' : Screens.empty('list', 'Nenhum chamado disponível', 'Novas solicitações aparecem nesta fila quando os motoristas enviarem uma triagem.') }
   </div>`;
@@ -354,6 +348,7 @@ Screens.chamadosOficina = () => {
   const groups = [['novos', 'Disponíveis'], ['ativos', 'Em atendimento'], ['concluidos', 'Encerrados']];
   return `<div class="screen workspace-screen">
     ${Screens.pageTitle('ÁREA DA OFICINA', 'Fila de chamados', 'Encontre solicitações por veículo, sintoma ou motorista.')}
+    ${Screens.verificacao(DB.getOficinaProfile(DB.getSession().id))}
     <div class="queue-toolbar">
       <div class="queue-filters" aria-label="Filtrar chamados">${groups.map(([id, label], i) => `<button class="filter-chip" data-fila="${id}" aria-pressed="${i === 0}">${label}</button>`).join('')}</div>
       <label class="queue-search">${Screens.icon('search', 18)}<input class="input" id="busca-chamados" type="search" aria-label="Buscar chamados" placeholder="Buscar chamados"></label>
@@ -365,7 +360,7 @@ Screens.chamadosOficina = () => {
 
 Screens.chatBubble = (m, userId) => {
   const photo = Screens.foto(m.foto_url);
-  return `<div class="bubble ${m.remetente_id === userId ? 'bubble-user' : 'bubble-oficina'}" data-msg="${Screens.escape(m.id)}">
+  return `<div class="bubble ${m.remetente_id === userId ? 'bubble-user' : 'bubble-oficina'}" data-msg="${Screens.escape(m.id)}" data-seq="${m.seq}">
     ${photo ? `<img src="${photo}" alt="Imagem anexada à conversa">` : ''}${Screens.multiline(m.conteudo)}
     <span class="bubble-time">${Screens.formatTime(m.enviado_em)}</span></div>`;
 };
@@ -376,10 +371,10 @@ Screens.chatActions = (at, role) => {
   if (at.status === 'aguardando_conclusao') {
     return role === 'oficina'
       ? '<span class="status status-amber">Aguardando confirmação</span>'
-      : `<button class="btn btn-primary btn-sm" onclick="App.navigate('avaliar', '${id}')">Confirmar conclusão</button>`;
+      : `<button class="btn btn-primary btn-sm" data-nav="avaliar" data-param="${id}">Confirmar conclusão</button>`;
   }
   return role === 'oficina'
-    ? `<button class="btn btn-secondary btn-sm" onclick="App.navigate('procedimento', '${id}')">${Screens.icon('list', 16)} Registrar serviços</button>`
+    ? `<button class="btn btn-secondary btn-sm" data-nav="procedimento" data-param="${id}">${Screens.icon('list', 16)} Registrar serviços</button>`
     : '<span class="status status-blue">Em atendimento</span>';
 };
 
@@ -392,13 +387,14 @@ Screens.chatOficina = (id) => {
   const contato = isOficina ? DB.getMotoristaProfile(c.motorista_id)?.nome : DB.getOficinaProfile(at.oficina_id)?.nome_oficina;
   const role = isOficina ? 'Motorista' : 'Oficina';
   return `<div class="screen workspace-screen conversation-screen">
-    <button class="text-button detail-back" onclick="App.navigate('chats')">${Screens.icon('back', 16)} Todas as conversas</button>
+    <button class="text-button detail-back" data-nav="chats">${Screens.icon('back', 16)} Todas as conversas</button>
     <div class="conversation-grid">
       <section class="conversation-panel" aria-label="Conversa do atendimento">
         <header class="conversation-heading">
           <span class="icon-tile">${Screens.icon(isOficina ? 'user' : 'wrench')}</span>
           <div><h1>${Screens.escape(contato || role)}</h1><p>${role} · ${Screens.escape(Screens.vehicleName(veiculo))}</p></div>
         </header>
+        <button class="text-button anteriores" id="mensagens-anteriores" hidden>Carregar mensagens anteriores</button>
         <div class="chat-messages" id="chat-oficina-messages" role="log" aria-label="Mensagens">
           ${DB.getMsgsByAtendimento(id).map(msg => Screens.chatBubble(msg, session.id)).join('') || Screens.empty('chat', 'A conversa está aberta', 'Envie uma mensagem para combinar a avaliação do veículo.')}
         </div>
@@ -407,7 +403,7 @@ Screens.chatOficina = (id) => {
           <div id="chat-attachment" hidden><img id="chat-foto-preview" alt="Prévia do anexo"><button type="button" class="text-button" id="btn-remove-foto">Remover foto</button></div>
           <div class="chat-input-row">
             <button type="button" class="btn btn-secondary btn-sm" id="btn-chat-foto" aria-label="Anexar foto">${Screens.icon('plus')}</button>
-            <input type="file" id="chat-foto-input" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" hidden>
+            <input type="file" id="chat-foto-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
             <textarea class="input" id="chat-oficina-input" aria-label="Sua mensagem" placeholder="Escreva uma mensagem..." rows="1" maxlength="2000"></textarea>
             <button class="btn btn-primary btn-sm" id="chat-oficina-send" aria-label="Enviar mensagem">${Screens.icon('arrow')}</button>
           </div>
@@ -417,8 +413,8 @@ Screens.chatOficina = (id) => {
         <h2>Atendimento</h2>
         <div id="conversation-state" data-status="${Screens.escape(at.status)}">${Screens.chatActions(at, session.user_type)}</div>
         <div id="chat-procedures"></div>
-        <button class="text-button" onclick="App.navigate('${isOficina ? 'detalhe-oficina' : 'aguardando'}', '${Screens.escape(c.id)}')">Ver pré-diagnóstico ${Screens.icon('arrow', 16)}</button>
-        ${isOficina ? '' : `<button class="text-button" onclick="App.navigate('perfil-oficina', '${Screens.escape(at.oficina_id)}')">Ver perfil da oficina ${Screens.icon('arrow', 16)}</button>`}
+        <button class="text-button" data-nav="${isOficina ? 'detalhe-oficina' : 'aguardando'}" data-param="${Screens.escape(c.id)}">Ver pré-diagnóstico ${Screens.icon('arrow', 16)}</button>
+        ${isOficina ? '' : `<button class="text-button" data-nav="perfil-oficina" data-param="${Screens.escape(at.oficina_id)}">Ver perfil da oficina ${Screens.icon('arrow', 16)}</button>`}
       </aside>
     </div>
   </div>`;
@@ -453,7 +449,7 @@ Screens.notificacoes = () => {
     ${Screens.pageTitle('ATUALIZAÇÕES', 'Avisos', 'Acompanhe novas mensagens e mudanças nos seus chamados.')}
     <div class="request-list">${notifs.map(n => `<article class="request-row notice-row ${n.lida ? '' : 'notice-new'}">
       <span class="icon-tile">${Screens.icon('bell')}</span><div class="request-title"><strong>${Screens.escape(n.titulo)}</strong><p>${Screens.escape(n.texto)} · ${Screens.timeSince(n.created_at)}</p></div>
-      ${n.destino && ['aguardando', 'detalhe-oficina', 'chat-oficina'].includes(n.destino.screen) ? `<button class="text-button request-link" onclick="App.navigate('${n.destino.screen}', '${Screens.escape(n.destino.id)}')">Abrir ${Screens.icon('arrow', 16)}</button>` : ''}
+      ${n.destino && ['aguardando', 'detalhe-oficina', 'chat-oficina'].includes(n.destino.screen) ? `<button class="text-button request-link" data-nav="${n.destino.screen}" data-param="${Screens.escape(n.destino.id)}">Abrir ${Screens.icon('arrow', 16)}</button>` : ''}
     </article>`).join('') || Screens.empty('bell', 'Tudo em dia', 'Novos avisos aparecem aqui.')}</div>
   </div>`;
 };

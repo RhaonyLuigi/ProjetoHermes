@@ -1,8 +1,9 @@
-Screens.atalhoPlano = (session) => `<button class="btn btn-secondary btn-sm plan-link" onclick="App.navigate('planos')">${Screens.icon('spark', 16)} ${DB.isAssinante(session.id) ? 'Meu plano' : 'Ver planos'}</button>`;
+Screens.atalhoPlano = (session) => `<button class="btn btn-secondary btn-sm plan-link" data-nav="planos">${Screens.icon('spark', 16)} ${DB.isAssinante(session.id) ? 'Meu plano' : 'Ver planos'}</button>`;
 
 Screens.planos = (session) => {
   const oficina = session.user_type === 'oficina';
   const ativo = DB.isAssinante(session.id);
+  const plano = DB.data.plano || {};
   const nome = oficina ? 'Oficina Pro' : 'Motorista Plus';
   const gratuito = oficina
     ? ['Fila de chamados e chat com motoristas', 'Painel básico de atendimentos', 'Acesso aos chamados após a janela de prioridade, quando houver']
@@ -12,30 +13,34 @@ Screens.planos = (session) => {
     : ['Experiência sem anúncios', 'Escolha até 3, 5, 10 ou 20 oficinas por chamado', 'Salve oficinas favoritas', 'Compare valores registrados sem abrir cada conversa'];
   const lista = itens => `<ul class="plano-beneficios">${itens.map(texto => `<li>${Screens.icon('check', 16)} ${texto}</li>`).join('')}</ul>`;
   return `<div class="screen workspace-screen">
-    ${Screens.pageTitle('ASSINATURAS', 'Planos Hermes', 'Compare os benefícios e experimente os planos com o seu perfil atual.')}
+    ${Screens.pageTitle('ASSINATURAS', 'Planos Hermes', 'Compare os benefícios disponíveis para o seu perfil.')}
     <div class="plano-grid">
       <section class="plano-card">
-        <span class="eyebrow">ESSENCIAL</span><h2>Gratuito</h2><p>O atendimento do Hermes com anúncios de demonstração.</p>
+        <span class="eyebrow">ESSENCIAL</span><h2>Gratuito</h2><p>O atendimento do Hermes com espaço para publicidade.</p>
         ${lista(gratuito)}
-        ${ativo ? '<button class="btn btn-secondary" id="alternar-plano">Voltar ao gratuito</button>' : '<span class="status status-green">Seu plano atual</span>'}
+        ${ativo ? '' : '<span class="status status-green">Seu plano atual</span>'}
       </section>
       <section class="plano-card plano-destaque">
-        <span class="eyebrow">DEMONSTRAÇÃO</span><h2>${nome}</h2><p>Recursos extras para o seu perfil, sem cobrança durante a demonstração.</p>
+        <span class="eyebrow">RECURSOS EXTRAS</span><h2>${nome}</h2><p>Solicite a ativação à administração do Hermes.</p>
         ${lista(pago)}
-        ${ativo ? '<span class="status status-green">Seu plano atual</span>' : `<button class="btn btn-accent" id="alternar-plano">Ativar ${nome} ${Screens.icon('arrow', 16)}</button>`}
+        ${ativo ? `<span class="status status-green">Ativo até ${Screens.formatDate(plano.expira_em)}</span>` : plano.solicitada_em
+          ? '<span class="status status-amber">Solicitação enviada</span>'
+          : `<button class="btn btn-accent" id="solicitar-plano">Solicitar ${nome} ${Screens.icon('arrow', 16)}</button>`}
       </section>
     </div>
-    <p class="muted plano-nota">A ativação é simulada e fica salva neste navegador. ${oficina ? 'O acesso antecipado dura até dois minutos quando ainda há uma oficina assinante apta a aceitar o chamado.' : 'Cada chamado mantém o limite escolhido no envio.'}</p>
+    <p class="muted plano-nota">A administração confirma a ativação. ${oficina ? 'O acesso antecipado dura até dois minutos quando ainda há uma oficina assinante apta a aceitar o chamado.' : 'Cada chamado mantém o limite escolhido no envio.'}</p>
   </div>`;
 };
 
 Screens.anuncio = (session) => {
   if (DB.isAssinante(session.id)) return '';
-  const oficina = session.user_type === 'oficina';
-  return `<aside class="anuncio-demo" aria-label="Anúncio de demonstração">
-    <span class="icon-tile">${Screens.icon(oficina ? 'wrench' : 'car')}</span>
-    <div><span class="eyebrow">PUBLICIDADE · DEMONSTRAÇÃO</span><strong>${oficina ? 'Equipamentos para o dia a dia da oficina' : 'Check-up antes de pegar a estrada'}</strong></div>
-    <button class="text-button" onclick="App.navigate('planos')">Remover anúncios ${Screens.icon('arrow', 16)}</button>
+  const anuncio = DB.data.anuncio;
+  return `<aside class="anuncio-demo" aria-label="Espaço publicitário">
+    <span class="icon-tile">${Screens.icon(session.user_type === 'oficina' ? 'wrench' : 'car')}</span>
+    <div><span class="eyebrow">PUBLICIDADE</span><strong>${Screens.escape(anuncio?.titulo || 'Espaço reservado para anúncios')}</strong>
+      ${anuncio ? `<p class="muted">${Screens.escape(anuncio.texto)}</p>` : ''}</div>
+    ${anuncio?.link ? `<a class="text-button" href="${Screens.escape(anuncio.link)}" rel="noopener noreferrer sponsored" target="_blank">Ver anúncio ${Screens.icon('arrow', 16)}</a>`
+      : `<button class="text-button" data-nav="planos">Remover anúncios ${Screens.icon('arrow', 16)}</button>`}
   </aside>`;
 };
 
@@ -43,7 +48,7 @@ Screens.favoritas = (session) => {
   if (!DB.isAssinante(session.id)) return '';
   const oficinas = DB.getFavoritas(session.id).map(id => DB.getOficinaProfile(id)).filter(Boolean);
   return `<div class="favoritas-panel"><h3>Oficinas favoritas</h3>
-    ${oficinas.map(oficina => `<button class="text-button" onclick="App.navigate('perfil-oficina', '${Screens.escape(oficina.user_id)}')">${Screens.escape(oficina.nome_oficina)} ${Screens.icon('arrow', 16)}</button>`).join('')
+    ${oficinas.map(oficina => `<button class="text-button" data-nav="perfil-oficina" data-param="${Screens.escape(oficina.user_id)}">${Screens.escape(oficina.nome_oficina)} ${Screens.icon('arrow', 16)}</button>`).join('')
     || '<p class="muted">Favorite uma oficina no acompanhamento de um chamado para encontrá-la aqui.</p>'}</div>`;
 };
 
@@ -53,7 +58,7 @@ Screens.metricasPro = (oficinaId, dias) => {
   const atendimentos = DB.getAtendimentosByOficina(oficinaId).filter(at => DB.atendimentoConfirmado(at));
   const conversas = atendimentos.filter(at => at.status === 'aceito').length;
   const aguardando = atendimentos.filter(at => at.status === 'aguardando_conclusao').length;
-  const mensagens = atendimentos.flatMap(at => DB.getMsgsByAtendimento(at.id)).filter(msg => noPeriodo(msg.enviado_em)).length;
+  const mensagens = DB.data.counts?.[dias] || 0;
   const servicos = atendimentos.flatMap(at => DB.getProcedimentosByAtendimento(at.id)).filter(p => noPeriodo(p.created_at));
   const valores = servicos.reduce((soma, p) => soma + (Number(p.custo) || 0), 0);
   const metricas = [

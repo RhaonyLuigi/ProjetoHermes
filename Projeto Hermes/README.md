@@ -1,30 +1,58 @@
 # Hermes
 
-Protótipo acadêmico que conecta motoristas e oficinas. O motorista escolhe o limite de oficinas, descreve o sintoma, revisa o pré-diagnóstico e envia um chamado. Cada oficina que aceita ocupa uma vaga e abre uma conversa separada com o motorista.
+Aplicativo de assistência automotiva com servidor Node.js e banco SQLite persistente. Motoristas e oficinas usam contas próprias. Cada oficina aprovada da mesma cidade pode aceitar um chamado enquanto houver vagas. O aceite abre uma conversa privada, com fotos, serviços registrados e conclusão individual.
 
-## Experimentar
+## Rodar no computador
 
-Abra `index.html` no Chrome ou Edge e escolha **Entrar como motorista**. Para usar um endereço local estável, execute `node server.mjs` na pasta do projeto e abra [Hermes no navegador](http://127.0.0.1:4173). O servidor usa Node.js 20 ou superior e dispensa instalação de dependências.
+Na pasta do projeto, execute o comando abaixo com Node.js 24 ou superior. O Hermes cria o banco em `data/hermes.sqlite` e funciona sem instalar bibliotecas.
 
-1. Em **Iniciar triagem**, escolha um veículo e o limite de oficinas. Responda às perguntas, revise o resumo e envie o chamado.
-2. Em **Trocar perfil**, entre como **Oficina Avenida** e aceite o chamado. Repita com **Oficina Central** e **Oficina Horizonte** até o limite escolhido.
-3. Volte ao perfil **Motorista**. Abra o chamado para ver as vagas e conversar separadamente com as oficinas. **Fechar vagas** encerra novos aceites e mantém as conversas que já existem.
-4. Como oficina, abra a conversa, registre os serviços e solicite a conclusão. Como motorista, confira os valores e confirme a conclusão desse atendimento. Você pode manter os perfis em abas separadas do mesmo navegador.
+```powershell
+npm start
+```
 
-## Planos de demonstração
+Abra [Hermes local](http://127.0.0.1:4173) e use **Criar conta**. Para entrar como motorista e oficina ao mesmo tempo, use perfis diferentes do navegador ou uma janela anônima. Escolha a mesma cidade e UF nas duas contas.
 
-- **Motorista gratuito** permite até 3, 4 ou 5 oficinas por chamado.
-- **Motorista Plus** remove os anúncios de demonstração, permite até 3, 5, 10 ou 20 oficinas, salva favoritas e mostra os valores registrados de cada oficina no acompanhamento.
-- **Oficina Pro** remove os anúncios, oferece respostas rápidas no chat e inclui um painel de desempenho com filtros de 7 e 30 dias. Oficinas Pro têm até 2 minutos de acesso antecipado a chamados novos. As vagas restantes são liberadas antes se todas as assinantes aptas já tiverem aceitado.
+## Administração
 
-Ative ou desative o plano em **Planos**. A simulação fica salva por perfil neste navegador e dispensa pagamento. Chamados enviados mantêm o limite escolhido mesmo após mudar de plano.
+No PowerShell, crie uma conta administrativa com um e-mail seu e uma senha privada de pelo menos 12 caracteres. O comando pede a senha no terminal.
 
-## Complemento com Gemini
+```powershell
+$env:HERMES_ADMIN_PASSWORD = Read-Host 'Senha do administrador' -MaskInput
+try {
+  npm run admin -- criar seu-email@exemplo.com
+} finally {
+  Remove-Item Env:HERMES_ADMIN_PASSWORD
+}
+```
 
-A triagem guiada usa categorias e perguntas locais. Com uma [chave da API Gemini](https://aistudio.google.com/docs/api-key) e um modelo compatível com [generateContent](https://aistudio.google.com/api-reference/generate-content), a revisão oferece a opção **Gerar com Gemini**. Configure as variáveis `GEMINI_API_KEY` e `GEMINI_MODEL` no terminal que executa `node server.mjs`. Use o identificador do modelo sem o prefixo `models/`.
+Entre com essa conta e abra **Gestão**.
 
-O servidor usa a chave para solicitar o complemento. Somente ao clicar em gerar, o app envia ao Gemini o modelo e ano do veículo e as respostas da triagem. Use dados fictícios na demonstração e evite escrever dados pessoais no relato. Se a API estiver indisponível, você pode enviar o resumo da triagem guiada.
+- **Oficinas** começam em análise. Após conferir os dados da empresa, aprove a oficina para liberar os chamados da região.
+- **Assinaturas** são solicitadas pelo perfil do cliente e confirmadas pela administração. A ativação dura 30 dias e pode ser renovada ou desativada. O sistema aplica os benefícios no servidor. A cobrança automática depende de escolher e integrar um provedor de pagamentos.
+- **Anúncios** aceitam título, texto e link HTTPS opcional. Há um espaço no painel de motoristas gratuitos e outro no painel de oficinas gratuitas.
+- **Revisões** permite tratar avaliações encaminhadas por oficinas. As conversas privadas ficam restritas a quem participa do atendimento.
 
-## Escopo do protótipo
+### Recuperação e backup
 
-Contas, chamados, mensagens e avaliações são armazenados neste navegador. A sincronização funciona entre abas da mesma origem. Os dados abertos via arquivo e pelo endereço local ficam em armazenamentos separados. A moderação também é local. Uma implantação para motoristas e oficinas reais exige autenticação e armazenamento compartilhado no servidor.
+```powershell
+npm run admin -- recuperar seu-email@exemplo.com
+npm run admin -- backup caminho/do/backup.sqlite
+```
+
+O comando de recuperação gera um link privado de uso único que vence em 30 minutos. Entregue-o ao titular depois de confirmar a identidade. A redefinição revoga as sessões antigas. O backup precisa de um caminho novo.
+
+## Instalar no celular
+
+O Hermes é um aplicativo web instalável. Em um endereço HTTPS, abra-o no navegador do celular e use **Instalar app** ou **Adicionar à Tela de Início**. O servidor é necessário para carregar contas, enviar chamados e trocar mensagens. [Instalação de aplicativos web](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable)
+
+## Disponibilizar para outras pessoas
+
+Execute `npm start` em um servidor Node com HTTPS e um volume persistente para o arquivo do banco. Configure `PUBLIC_URL` com a origem HTTPS, sem caminho, e `DATABASE_PATH` com o caminho do volume. A instância do Hermes deve atender atrás do proxy HTTPS do provedor. O app usa uma instância com o SQLite no disco local. O GitHub Pages serve arquivos estáticos e a versão com servidor precisa de uma hospedagem que execute Node.
+
+`.env.example` documenta as opções. Mantenha o banco, os backups e as variáveis de ambiente fora do repositório público. As contas e chamados da versão anterior eram dados do navegador. A versão com servidor começa com contas cadastradas no banco.
+
+O complemento com Gemini é opcional. Defina `GEMINI_API_KEY` e `GEMINI_MODEL` no ambiente para habilitar a opção na revisão. A triagem guiada funciona com perguntas locais. [Documentação da API Gemini](https://aistudio.google.com/api-reference/generate-content)
+
+## Verificar o servidor
+
+`npm test` executa o cenário de integração em um banco temporário. Ele verifica isolamento das conversas, limite de vagas, permissões, planos, anúncios, redefinição de senha e persistência.

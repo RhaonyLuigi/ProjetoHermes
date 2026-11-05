@@ -122,6 +122,16 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 .login-details .row-actions { justify-content: space-between; padding-top: 5px; }
 .local-note { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 24px; }
 .local-note svg { flex-shrink: 0; }
+.login-form { margin-top: 20px; }
+.login-links { justify-content: space-between; margin-top: 10px; }
+.campos-localidade { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; }
+.anteriores { margin: 4px 15px; }
+.admin-grid { align-items: start; }
+.admin-anuncios { margin-top: 16px; }
+.admin-anuncios h3 { margin: 12px 0; }
+.install-help { width: min(90vw, 420px); margin: auto; }
+.install-help::backdrop { background: #10203399; }
+.install-help form { margin-top: 12px; }
 
 .service-hero { position: relative; overflow: hidden; min-height: 280px; padding: 29px 30px; color: white; border-radius: 18px; background: linear-gradient(110deg, #14243a 32%, #20394f 100%); margin-bottom: 30px; }
 .service-diagram { position: absolute; width: min(56%, 595px); height: 124%; right: -6px; top: -12%; object-fit: contain; pointer-events: none; }
@@ -330,7 +340,7 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
   .welcome-story > small { display: none; }
   .service-diagram { right: -14%; width: 70%; opacity: .5; }
   .service-copy p { max-width: min(68%, 350px); }
-  #toast-container { top: auto; bottom: 74px; width: min(100% - 28px, 380px); }
+  #toast-container { top: 62px; bottom: auto; width: min(100% - 28px, 380px); }
 }
 
 @media (max-width: 420px) {

@@ -32,44 +32,50 @@ Screens.register = () => `
     <div class="logo-title">Projeto Hermes</div>
     <div class="logo-subtitle">Preencha seus dados para criar sua conta.</div>
   </div>
-  <div class="card" style="width:100%">
+  <form class="card" style="width:100%" id="register-form">
     <div class="toggle-pill" style="margin-bottom:20px">
-      <button id="reg-toggle-motorista" class="active">🚗 Motorista</button>
-      <button id="reg-toggle-oficina">🔧 Oficina</button>
+      <button type="button" class="active" data-tipo-conta="motorista" aria-pressed="true">Motorista</button>
+      <button type="button" data-tipo-conta="oficina" aria-pressed="false">Oficina</button>
     </div>
     <div class="form-group">
       <label for="reg-email">Email</label>
-      <input class="input" type="email" id="reg-email" placeholder="seu@email.com" />
+      <input class="input" type="email" id="reg-email" autocomplete="email" maxlength="254" required placeholder="seu@email.com" />
     </div>
     <div class="form-group">
       <label for="reg-senha">Senha</label>
-      <input class="input" type="password" id="reg-senha" placeholder="••••••••" />
+      <input class="input" type="password" id="reg-senha" autocomplete="new-password" minlength="12" maxlength="128" required />
     </div>
     <div class="form-group">
       <label for="reg-confirm">Confirmar Senha</label>
-      <input class="input" type="password" id="reg-confirm" placeholder="••••••••" />
+      <input class="input" type="password" id="reg-confirm" autocomplete="new-password" minlength="12" maxlength="128" required />
     </div>
-    <button class="btn btn-primary" id="btn-criar">CRIAR CONTA</button>
-  </div>
+    <p class="muted" style="margin-bottom:12px">Use pelo menos 12 caracteres na senha.</p>
+    <button class="btn btn-primary" id="btn-criar">Criar conta</button>
+  </form>
   <div style="margin-top:16px;text-align:center">
     <span style="font-size:14px;color:#9E9E9E">Já tem conta? </span>
-    <a class="link" id="link-login">Entrar</a>
+    <button class="text-button" data-nav="login">Entrar</button>
   </div>
 </div>`;
 
 // ---- TELA 3: ESQUECI A SENHA ----
 Screens.forgotPassword = () => `
-<div class="screen screen-centered" id="screen-forgot">
-  <div class="screen-header" style="width:100%;justify-content:flex-start;padding-top:0">
-    <button class="back-btn" id="btn-back-forgot">←</button>
+<div class="screen screen-centered">
+  <div class="card" style="width:100%">
+    <button class="text-button" data-nav="login">Voltar ao login</button>
+    <h1 class="card-title">Recuperar acesso</h1>
+    ${new URLSearchParams(location.hash.slice(1)).has('recuperar') ? `
+      <form id="recuperar-form">
+        <div class="form-group"><label for="recuperar-senha">Nova senha</label><input class="input" type="password" id="recuperar-senha" minlength="12" maxlength="128" autocomplete="new-password" required></div>
+        <div class="form-group"><label for="recuperar-confirmar">Confirme a senha</label><input class="input" type="password" id="recuperar-confirmar" minlength="12" maxlength="128" autocomplete="new-password" required></div>
+        <button class="btn btn-primary">Redefinir senha</button>
+      </form>` : '<p class="muted">Solicite ao responsável pelo Hermes um link privado de recuperação. O link permite redefinir a senha uma vez e expira em 30 minutos.</p>'}
   </div>
-  <div style="text-align:center;margin-bottom:28px">
-    <span style="font-size:52px">🔑</span>
-    <h1 style="font-size:22px;font-weight:800;margin:12px 0 8px">Esqueceu sua Senha?</h1>
-    <p style="font-size:14px;color:#9E9E9E;line-height:1.6;max-width:300px;margin:0 auto">
-      A conta fica neste navegador. Você pode voltar e usar um dos perfis de demonstração para explorar o Hermes.
-    </p>
-  </div>
+</div>`;
+
+Screens.localidade = (tipo, perfil) => `<div class="campos-localidade">
+  <div class="form-group"><label for="${tipo}-cidade">Cidade</label><input class="input" id="${tipo}-cidade" name="cidade" maxlength="90" required value="${Screens.escape(perfil?.cidade)}" autocomplete="address-level2" placeholder="Ex. São Paulo"></div>
+  <div class="form-group"><label for="${tipo}-uf">UF</label><select class="input" id="${tipo}-uf" name="uf" autocomplete="address-level1" required><option value="">Selecione</option>${'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ').map(uf => `<option ${perfil?.uf === uf ? 'selected' : ''}>${uf}</option>`).join('')}</select></div>
 </div>`;
 
 // ---- TELA 4: CHECKIN MOTORISTA ----
@@ -96,7 +102,8 @@ Screens.checkinMotorista = () => `
     <input class="input" type="tel" id="motorista-tel" placeholder="(11) 99999-9999" />
   </div>
   <div style="margin-top:8px">
-    <button class="btn btn-primary" id="btn-salvar-motorista">CONTINUAR</button>
+    ${Screens.localidade('motorista')}
+    <button class="btn btn-primary" id="btn-salvar-motorista">Continuar</button>
   </div>
 </div>`;
 
@@ -128,7 +135,8 @@ Screens.checkinOficina = () => `
     <textarea class="input" id="oficina-sobre" placeholder="Fale um pouco sobre sua oficina..."></textarea>
   </div>
   <div style="margin-top:8px">
-    <button class="btn btn-primary" id="btn-salvar-oficina">CONTINUAR</button>
+    ${Screens.localidade('oficina')}
+    <button class="btn btn-primary" id="btn-salvar-oficina">Enviar para verificação</button>
   </div>
 </div>`;
 
@@ -179,7 +187,7 @@ Screens.avaliarOficina = (atendimentoId) => {
   ];
   return `<div class="screen" id="screen-avaliar" style="padding-top:24px">
     <div class="screen-header">
-      <button class="back-btn" aria-label="Voltar à conversa" onclick="App.goBack()">←</button>
+      <button class="back-btn" aria-label="Voltar à conversa" data-voltar>←</button>
       <h1>Confirmar conclusão</h1>
     </div>
     ${procs.length ? `<div class="card"><h2 class="card-title">Serviços registrados</h2>${Screens.procedures(procs)}</div>` : ''}
@@ -300,26 +308,15 @@ Screens.adminRevisao = (avalId) => {
   const av = DB.getAvaliacaoById(avalId);
   if (!av) return `<div class="screen"><p>Avaliação não encontrada.</p></div>`;
 
-  const msgs = DB.getMsgsByAtendimento(av.atendimento_id);
-  const chatHtml = msgs.length ? msgs.map(m => {
-    const tipo = m.tipo_remetente || m.remetente_tipo;
-    const cor = tipo === 'motorista' ? '#007AFF' : '#34C759';
-    return `<div style="font-size:12px;margin-bottom:6px"><b style="color:${cor}">${tipo === 'motorista' ? 'Motorista' : 'Oficina'}:</b> ${Screens.multiline(m.conteudo)}</div>`;
-  }).join('') : '<div style="font-size:12px;color:#9e9e9e">Chat vazio.</div>';
-
   return `<div class="screen" style="padding-top:24px;display:flex;flex-direction:column;height:100vh">
     <div class="screen-header">
-      <button class="back-btn" onclick="App.navigate('admin-dashboard')">←</button>
+      <button class="back-btn" data-nav="admin-dashboard">←</button>
       <h1>Revisar Avaliação</h1>
     </div>
     <div class="card" style="flex:1;overflow-y:auto">
       <h3 style="font-size:14px;margin-bottom:8px">Avaliação Original:</h3>
       <div style="color:#FF9500;font-size:16px;margin-bottom:4px">★ ${av.media.toFixed(1)}</div>
       <div style="font-size:13px;margin-bottom:16px"><i>"${Screens.multiline(av.comentario)}"</i></div>
-      <h3 style="font-size:14px;margin-bottom:8px;border-top:1px solid #E0E0E0;padding-top:16px">Histórico de Chat do Chamado:</h3>
-      <div style="background:#F5F5F5;padding:10px;border-radius:8px;max-height:200px;overflow-y:auto;border:1px solid #E0E0E0">
-        ${chatHtml}
-      </div>
     </div>
     <div style="display:flex;gap:8px;padding-top:16px">
       <button class="btn btn-danger" id="btn-admin-excluir" style="flex:1">Excluir Avaliação</button>

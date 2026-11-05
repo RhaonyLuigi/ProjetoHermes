@@ -58,3 +58,5 @@ const Triagem = {
     return { relato, inspecao: grupo.inspecao, alerta };
   }
 };
+
+if (typeof module === 'object') module.exports = Triagem;

@@ -91,9 +91,21 @@ Screens.perfil = () => {
       <span style="font-size:14px;color:#9E9E9E">${Screens.escape(profile?.cnpj || profile?.telefone || '—')}</span>
     </div>
     ${oficinaExtra}
-    ${isOficina ? `<button class="btn btn-secondary" onclick="App.navigate('perfil-oficina', '${session.id}')" style="margin-top:12px;font-size:14px;background:#F0F0F0;color:#007AFF">⭐ Ver Minhas Avaliações</button>` : ''}
+    ${isOficina ? `<button class="btn btn-secondary" data-nav="perfil-oficina" data-param="${session.id}" style="margin-top:12px;font-size:14px;background:#F0F0F0;color:#007AFF">⭐ Ver Minhas Avaliações</button>` : ''}
   </div>
-  ${isOficina ? '' : '<button class="btn btn-secondary" onclick="App.navigate(\'veiculos\')">Minha garagem</button>'}
+  ${profile ? `<details class="card">
+    <summary class="card-title">Editar dados do perfil</summary>
+    <form id="editar-perfil" class="login-form">
+      <div class="form-group"><label for="editar-nome">Nome</label><input class="input" id="editar-nome" name="nome" maxlength="100" required value="${Screens.escape(name)}"></div>
+      ${isOficina ? `<div class="form-group"><label for="editar-cnpj">CNPJ</label><input class="input" id="editar-cnpj" name="cnpj" maxlength="24" required value="${Screens.escape(profile.cnpj)}"></div>
+        <div class="form-group"><label for="editar-sobre">Sobre a oficina</label><textarea class="input" id="editar-sobre" name="sobre" maxlength="1000">${Screens.escape(profile.sobre)}</textarea></div>
+        <p class="muted">Mudar o nome da empresa, o CNPJ ou a região exige nova aprovação.</p>`
+        : `<div class="form-group"><label for="editar-telefone">Telefone</label><input class="input" id="editar-telefone" name="telefone" maxlength="25" type="tel" required value="${Screens.escape(profile.telefone)}"></div>`}
+      ${Screens.localidade('editar', profile)}
+      <button class="btn btn-primary">Salvar alterações</button>
+    </form>
+  </details>` : ''}
+  ${isOficina ? '' : '<button class="btn btn-secondary" data-nav="veiculos">Minha garagem</button>'}
   <div class="row-actions" style="margin-top:16px">${Screens.atalhoPlano(session)}<button class="btn btn-danger btn-sm" id="btn-logout">Sair da conta</button></div>
 </div>`;
 };

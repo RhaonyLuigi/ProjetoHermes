@@ -82,38 +82,23 @@ Object.assign(App, {
     send.onclick = async () => {
       send.disabled = true;
       try {
-        const chamado = await this.withLocalWrite(() => {
-          const salvo = DB.getDraft(session.id);
-          if (salvo?.id !== draft.id || salvo.etapa !== 3) return null;
-          const resumo = Triagem.resumo(salvo);
-          const perguntas = Triagem.perguntas(salvo.categoria).map((p, i) => ({ pergunta: p.texto, resposta: salvo.respostas[i] }));
-          const publicado = DB.publicarChamado(session.id, salvo, resumo, perguntas);
-          if (!publicado) return null;
-          DB.clearDraft(session.id);
-          DB.getAllOficinas().forEach(of => DB.addNotif(of.user_id, 'Novo chamado disponível', 'Um motorista enviou um pré-diagnóstico para análise.', { screen: 'detalhe-oficina', id: publicado.id }));
-          return publicado;
-        });
-        if (!chamado) {
-          this.toast('Confira o rascunho e o limite disponível no seu plano.', 'info');
+        const salvo = DB.getDraft(session.id);
+        if (salvo?.id !== draft.id || salvo.etapa !== 3) {
+          this.toast('Confira a versão atual do rascunho.', 'info');
           if (send.isConnected) this.bindChatIA();
           return;
         }
+        const chamado = await DB.mutate('publicar', salvo);
+        DB.clearDraft(session.id);
         if (send.isConnected) {
           this.toast('Chamado enviado à fila de oficinas.', 'success');
           this.navigate('aguardando', chamado.id);
         }
-      } catch {
-        if (send.isConnected) {
-          send.disabled = false;
-          this.toast('Não foi possível salvar o chamado neste navegador.', 'error');
-        }
-      }
+      } catch (error) {
+        if (send.isConnected) this.toast(error.message, 'error');
+      } finally { send.disabled = false; }
     };
     this.bindGemini(draft, veiculos, update, send);
-  },
-
-  withLocalWrite(operation) {
-    return navigator.locks ? navigator.locks.request('hermes-write', operation) : Promise.resolve().then(operation);
   },
 
   bindGemini(draft, veiculos, update, send) {
@@ -163,69 +148,51 @@ Object.assign(App, {
     const btn = document.querySelector('[data-action="aceitar"]');
     if (!btn) return;
     const session = DB.getSession();
-    btn.onclick = async () => {
-      btn.disabled = true;
+    btn.onclick = () => this.runButton(btn, async () => {
+      const chamadoId = btn.dataset.chamado;
       try {
-        const chamadoId = btn.dataset.chamado;
-        const atendimento = await this.withLocalWrite(() => {
-          const chamado = DB.getChamadoById(chamadoId);
-          const at = DB.aceitarChamado(chamadoId, session.id);
-          if (at) DB.addNotif(chamado.motorista_id, 'Uma oficina aceitou seu chamado', 'Uma nova conversa está disponível.', { screen: 'chat-oficina', id: at.id });
-          return at;
-        });
+        const atendimento = await DB.mutate('aceitar', { chamadoId });
         if (this.currentScreen !== 'detalhe-oficina' || this.currentParam !== chamadoId || DB.getSession()?.id !== session.id) return;
-        if (atendimento) {
-          this.toast('Chamado aceito. A conversa está disponível.', 'success');
-          this.navigate('chat-oficina', atendimento.id);
-        } else {
-          this.toast('A disponibilidade do chamado mudou.', 'info');
-          this.navigate('detalhe-oficina', chamadoId);
+        this.toast('Chamado aceito. A conversa está disponível.', 'success');
+        this.navigate('chat-oficina', atendimento.id);
+      } catch (error) {
+        if (error.status === 409) {
+          await DB.refresh();
+          if (this.currentScreen === 'detalhe-oficina') this.navigate('detalhe-oficina', chamadoId);
         }
-      } catch {
-        btn.disabled = false;
-        this.toast('Não foi possível aceitar o chamado neste navegador.', 'error');
+        throw error;
       }
-    };
+    });
   },
 
   bindAcompanhamento(chamadoId) {
-    const session = DB.getSession();
     document.querySelectorAll('[data-oficina-favorita]').forEach(btn => {
-      btn.onclick = () => {
-        const id = btn.dataset.oficinaFavorita;
-        DB.toggleFavorita(session.id, id);
-        const salva = DB.getFavoritas(session.id).includes(id);
-        btn.setAttribute('aria-pressed', String(salva));
-        btn.textContent = salva ? '★ Favorita' : '☆ Favoritar';
-      };
+      btn.onclick = () => this.runButton(btn, async () => {
+        const oficinaId = btn.dataset.oficinaFavorita;
+        const salvar = btn.getAttribute('aria-pressed') !== 'true';
+        await DB.mutate('favorita', { oficinaId, salvar });
+        btn.setAttribute('aria-pressed', String(salvar));
+        btn.textContent = salvar ? '★ Favorita' : '☆ Favoritar';
+      });
     });
     const btn = document.getElementById('fechar-aceites');
-    if (btn) {
-      btn.onclick = async () => {
-        if (!confirm('Fechar as vagas deste chamado? As conversas abertas continuam disponíveis.')) return;
-        btn.disabled = true;
-        try {
-          const fechado = await this.withLocalWrite(() => DB.fecharAceites(chamadoId, session.id));
-          if (this.currentScreen !== 'aguardando' || this.currentParam !== chamadoId || DB.getSession()?.id !== session.id) return;
-          if (fechado) this.toast('Vagas fechadas. Suas conversas continuam disponíveis.', 'success');
-          this.navigate('aguardando', chamadoId);
-        } catch {
-          this.toast('Não foi possível fechar as vagas neste navegador.', 'error');
-        } finally {
-          btn.disabled = false;
-        }
-      };
-    }
+    if (btn) btn.onclick = () => {
+      if (!confirm('Fechar as vagas deste chamado? As conversas abertas continuam disponíveis.')) return;
+      this.runButton(btn, async () => {
+        await DB.mutate('fechar-vagas', { chamadoId });
+        this.toast('Vagas fechadas. Suas conversas continuam disponíveis.', 'success');
+        this.navigate('aguardando', chamadoId);
+      });
+    };
   },
 
-  bindPlano(session) {
-    const btn = document.getElementById('alternar-plano');
-    btn.onclick = () => {
-      const ativar = !DB.isAssinante(session.id);
-      DB.setAssinante(session.id, ativar);
+  bindPlano() {
+    const btn = document.getElementById('solicitar-plano');
+    if (btn) btn.onclick = () => this.runButton(btn, async () => {
+      await DB.mutate('solicitar-plano');
       this.navigate('planos');
-      this.toast(ativar ? 'Plano de demonstração ativado.' : 'Plano gratuito selecionado.', 'success');
-    };
+      this.toast('Solicitação enviada.', 'success');
+    });
   },
 
   bindPainelPro() {
@@ -261,25 +228,47 @@ Object.assign(App, {
     update();
   },
 
-  syncStorage(event) {
-    if (!event.key?.startsWith('hermes_') || !DB.getSession()) return;
-    const { currentScreen, currentParam } = this;
-    if (event.key.startsWith('hermes_plano_') && (currentScreen === 'detalhe-oficina' ||
-        event.key === 'hermes_plano_' + DB.getSession().id && ['home', 'dashboard', 'planos', 'chat-ia', 'aguardando'].includes(currentScreen))) {
-      this.navigate(currentScreen, currentParam);
-    }
-    if (event.key === 'hermes_notifs') this.refreshUnread();
-    if (currentScreen === 'chat-oficina' && ['hermes_mensagens', 'hermes_atendimentos', 'hermes_procedimentos'].includes(event.key)) {
-      this.refreshConversation(currentParam);
-    }
-    if (['hermes_atendimentos', 'hermes_chamados', 'hermes_procedimentos'].includes(event.key) &&
-        ['aguardando', 'detalhe-oficina', 'home', 'dashboard', 'chats'].includes(currentScreen)) this.navigate(currentScreen, currentParam);
-    if (['hermes_atendimentos', 'hermes_chamados'].includes(event.key) && currentScreen === 'chamados') {
-      const search = document.getElementById('busca-chamados');
-      const group = document.querySelector('[data-fila][aria-pressed="true"]').dataset.fila;
-      document.querySelector('#screen-container .workshop-grid').innerHTML = Screens.queueCards(DB.getSession().id);
-      this.bindChamados(group, search.value);
-    }
+  async syncServer() {
+    if (document.hidden || !DB.getSession() || DB.writing || this.syncing) return;
+    this.syncing = true;
+    const before = DB.data;
+    try {
+      const after = await DB.refresh();
+      if (before.session?.id !== after.session?.id) {
+        this.history = [];
+        this.currentScreen = null;
+        this.boot();
+        return;
+      }
+      const changed = key => JSON.stringify(before[key]) !== JSON.stringify(after[key]);
+      const { currentScreen: screen, currentParam: param } = this;
+      if (changed('notifs')) {
+        this.refreshUnread();
+        if (screen === 'notificacoes') this.navigate(screen, param);
+      }
+      const callChanges = ['chamados', 'atendimentos', 'procedimentos', 'oficina_profiles'].some(changed);
+      const planChanged = changed('plano');
+      if (screen === 'chat-oficina') {
+        const latest = after.mensagens?.find(m => m.atendimento_id === param)?.seq;
+        const loaded = DB.threads.get(param)?.messages.at(-1)?.seq;
+        if (latest && latest !== loaded) await DB.loadChat(param, null, loaded);
+        if (this.currentScreen === screen && this.currentParam === param) this.refreshConversation(param);
+        return;
+      }
+      if (screen === 'chamados' && callChanges) {
+        const search = document.getElementById('busca-chamados');
+        const group = document.querySelector('[data-fila][aria-pressed="true"]').dataset.fila;
+        document.querySelector('#screen-container .workshop-grid').innerHTML = Screens.queueCards(DB.getSession().id);
+        this.bindChamados(group, search.value);
+      } else if ((callChanges || planChanged || changed('anuncio')) && ['home', 'dashboard', 'aguardando', 'detalhe-oficina', 'planos'].includes(screen) ||
+                 screen === 'chats' && (callChanges || changed('mensagens'))) {
+        const y = window.scrollY;
+        this.navigate(screen, param);
+        if (this.currentScreen === screen) window.scrollTo(0, y);
+      }
+    } catch {
+      // A próxima sincronização tenta novamente sem apagar dados já carregados.
+    } finally { this.syncing = false; }
   },
 
   refreshConversation(id) {
@@ -290,11 +279,22 @@ Object.assign(App, {
     const existing = new Set([...msgs.querySelectorAll('[data-msg]')].map(el => el.dataset.msg));
     const fresh = DB.getMsgsByAtendimento(id).filter(msg => !existing.has(msg.id));
     if (fresh.length) {
+      const first = Number(msgs.querySelector('[data-msg]')?.dataset.seq || 0);
+      const old = fresh.filter(msg => msg.seq < first);
+      const newer = fresh.filter(msg => msg.seq >= first);
       msgs.querySelector('.empty-panel')?.remove();
-      msgs.insertAdjacentHTML('beforeend', fresh.map(msg => Screens.chatBubble(msg, session.id)).join(''));
-      if (wasAtBottom || fresh.some(msg => msg.remetente_id === session.id)) msgs.scrollTop = msgs.scrollHeight;
+      const height = msgs.scrollHeight;
+      if (old.length) {
+        msgs.insertAdjacentHTML('afterbegin', old.map(msg => Screens.chatBubble(msg, session.id)).join(''));
+        msgs.scrollTop += msgs.scrollHeight - height;
+      }
+      if (newer.length) msgs.insertAdjacentHTML('beforeend', newer.map(msg => Screens.chatBubble(msg, session.id)).join(''));
+      if (wasAtBottom || newer.some(msg => msg.remetente_id === session.id)) msgs.scrollTop = msgs.scrollHeight;
     }
+    const older = document.getElementById('mensagens-anteriores');
+    if (older) older.hidden = !DB.threads.get(id)?.more;
     const at = DB.getAtendimentoById(id);
+    if (!at) return this.goHome();
     const state = document.getElementById('conversation-state');
     if (state.dataset.status !== at.status) {
       state.dataset.status = at.status;
@@ -325,9 +325,19 @@ Object.assign(App, {
     const attachment = document.getElementById('chat-attachment');
     const send = document.getElementById('chat-oficina-send');
     const attach = document.getElementById('btn-chat-foto');
-    const at = DB.getAtendimentoById(id);
-    const c = DB.getChamadoById(at.chamado_id);
-    const destinatario = session.user_type === 'oficina' ? c.motorista_id : at.oficina_id;
+    const previous = document.getElementById('mensagens-anteriores');
+    let pending = null;
+    previous.onclick = () => this.runButton(previous, async () => {
+      await DB.loadChat(id, DB.getMsgsByAtendimento(id)[0]?.seq);
+      if (previous.isConnected) this.refreshConversation(id);
+    });
+    DB.threads.delete(id);
+    DB.loadChat(id).then(() => {
+      if (form.isConnected) {
+        this.refreshConversation(id);
+        msgs.scrollTop = msgs.scrollHeight;
+      }
+    }).catch(error => { if (form.isConnected) this.toast(error.message, 'error'); });
     let reading = false;
     let photo = '';
     const resetPhoto = () => {
@@ -368,21 +378,16 @@ Object.assign(App, {
       if ((!text && !photo) || reading || send.disabled) return;
       send.disabled = attach.disabled = input.disabled = true;
       try {
-        const sent = await this.withLocalWrite(() => {
-          const atual = DB.getAtendimentoById(id);
-          if (!DB.atendimentoConfirmado(atual) || atual.status === 'concluido') return false;
-          DB.saveMsg(id, session.id, session.user_type, text, photo);
-          DB.addNotif(destinatario, 'Nova mensagem na conversa', text.slice(0, 100) || 'Você recebeu uma foto.', { screen: 'chat-oficina', id });
-          return true;
-        });
+        if (!pending || pending.conteudo !== text || pending.foto !== photo) pending = { id: DB._id(), conteudo: text, foto: photo };
+        await DB.mutate('mensagem', { atendimentoId: id, ...pending });
+        pending = null;
         if (!form.isConnected) return;
-        if (sent) {
-          input.value = '';
-          resetPhoto();
-        } else this.toast('O atendimento foi concluído.', 'info');
-        this.refreshConversation(id);
-      } catch {
-        this.toast('Falha ao salvar a mensagem. Confira o espaço disponível e tente novamente.', 'error');
+        input.value = '';
+        resetPhoto();
+        await DB.loadChat(id, null, DB.getMsgsByAtendimento(id).at(-1)?.seq);
+        if (form.isConnected) this.refreshConversation(id);
+      } catch (error) {
+        this.toast(error.message, 'error');
       } finally {
         send.disabled = attach.disabled = input.disabled = false;
         if (form.isConnected && !form.hidden) input.focus();
@@ -391,8 +396,8 @@ Object.assign(App, {
   },
 
   async readPhoto(file) {
-    if (!/^image\/(jpeg|png|webp|gif|avif)$/.test(file.type) || file.size > 2 * 1024 * 1024) {
-      throw new Error('Selecione uma imagem JPG, PNG, WebP, GIF ou AVIF de até 2 MB.');
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > 2 * 1024 * 1024) {
+      throw new Error('Selecione uma imagem JPG, PNG, WebP ou GIF de até 2 MB.');
     }
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -403,4 +408,4 @@ Object.assign(App, {
   }
 });
 
-window.addEventListener('storage', event => App.syncStorage(event));
+setInterval(() => App.syncServer(), 4000);
